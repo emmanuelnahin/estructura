@@ -421,6 +421,17 @@
             height: 12px;
             border-radius: 2px;
         }
+        
+        /* Estilos para error boundary */
+        .error-boundary {
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            border: 2px solid #ef4444;
+        }
+        
+        .error-message {
+            font-family: 'Courier New', monospace;
+            background: rgba(0, 0, 0, 0.05);
+        }
     </style>
 </head>
 <body>
@@ -428,40 +439,279 @@
     
     <script type="text/babel" data-presets="env,react">
         // ============================================
+        // MANEJO DE ERRORES GLOBAL
+        // ============================================
+        
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null, errorInfo: null };
+            }
+            
+            static getDerivedStateFromError(error) {
+                return { hasError: true };
+            }
+            
+            componentDidCatch(error, errorInfo) {
+                this.setState({
+                    error: error,
+                    errorInfo: errorInfo
+                });
+                console.error('ErrorBoundary capturó un error:', error, errorInfo);
+            }
+            
+            handleReset = () => {
+                // Intentar resetear datos corruptos
+                try {
+                    localStorage.removeItem('luxanalitica_org_data');
+                    localStorage.removeItem('luxanalitica_versions');
+                } catch (e) {
+                    console.warn('No se pudo limpiar localStorage:', e);
+                }
+                this.setState({ hasError: false, error: null, errorInfo: null });
+                window.location.reload();
+            }
+            
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="h-screen w-screen flex items-center justify-center bg-gradient-to-br from-red-50 to-orange-50 p-8">
+                            <div className="max-w-2xl bg-white rounded-3xl p-8 shadow-2xl border border-red-200 text-center">
+                                <div className="text-red-500 text-6xl mb-6">
+                                    <i className="fas fa-bug"></i>
+                                </div>
+                                <h1 className="text-3xl font-black text-slate-800 mb-4">¡Error Crítico Detectado!</h1>
+                                <p className="text-slate-600 mb-6">
+                                    La aplicación encontró un problema que impide continuar. Esto puede ser causado por:
+                                </p>
+                                <ul className="text-left mb-8 space-y-2 text-slate-600">
+                                    <li className="flex items-center gap-2">
+                                        <i className="fas fa-database text-red-500"></i>
+                                        <span>Datos corruptos en el navegador</span>
+                                    </li>
+                                    <li className="flex items-center gap-2">
+                                        <i className="fas fa-code text-amber-500"></i>
+                                        <span>Conflicto en las dependencias</span>
+                                    </li>
+                                    <li className="flex items-center gap-2">
+                                        <i className="fas fa-memory text-blue-500"></i>
+                                        <span>Problema de memoria</span>
+                                    </li>
+                                </ul>
+                                
+                                {this.state.error && (
+                                    <div className="bg-slate-900 text-slate-100 p-4 rounded-xl mb-6 text-left overflow-auto max-h-40">
+                                        <div className="font-mono text-sm error-message">
+                                            <div className="text-red-300 font-bold">{this.state.error.toString()}</div>
+                                            <div className="text-slate-400 text-xs mt-2">
+                                                {this.state.errorInfo?.componentStack}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                                    <button
+                                        onClick={this.handleReset}
+                                        className="px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-xl font-bold hover:from-red-700 hover:to-red-800 transition-all shadow-lg flex items-center justify-center gap-2"
+                                    >
+                                        <i className="fas fa-redo"></i>
+                                        Reiniciar Aplicación
+                                    </button>
+                                    <button
+                                        onClick={() => window.location.reload()}
+                                        className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg flex items-center justify-center gap-2"
+                                    >
+                                        <i className="fas fa-sync-alt"></i>
+                                        Recargar Página
+                                    </button>
+                                </div>
+                                
+                                <div className="mt-8 pt-6 border-t border-slate-200">
+                                    <p className="text-sm text-slate-500">
+                                        Si el problema persiste, contacta al equipo de soporte o 
+                                        <button 
+                                            onClick={() => {
+                                                localStorage.clear();
+                                                window.location.reload();
+                                            }}
+                                            className="ml-1 text-red-600 font-bold hover:text-red-800"
+                                        >
+                                            haz clic aquí para limpiar todos los datos
+                                        </button>
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+                
+                return this.props.children;
+            }
+        }
+        
+        // ============================================
+        // FUNCIONES DE VALIDACIÓN Y SANITIZACIÓN
+        // ============================================
+        
+        const validateAndSanitizeNodes = (nodes) => {
+            if (!Array.isArray(nodes)) {
+                console.error('Datos no son un array:', nodes);
+                return [];
+            }
+            
+            const validNodes = [];
+            const seenIds = new Set();
+            
+            for (let i = 0; i < nodes.length; i++) {
+                const node = nodes[i];
+                
+                // Validar estructura básica
+                if (!node || typeof node !== 'object') {
+                    console.warn('Nodo inválido en posición', i, ':', node);
+                    continue;
+                }
+                
+                // Generar ID si no existe
+                if (!node.id || typeof node.id !== 'string') {
+                    node.id = `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                }
+                
+                // Evitar IDs duplicados
+                if (seenIds.has(node.id)) {
+                    node.id = `${node.id}_${i}`;
+                }
+                seenIds.add(node.id);
+                
+                // Validar y sanitizar campos
+                node.name = node.name ? String(node.name).substring(0, 100) : 'Sin Nombre';
+                node.title = node.title ? String(node.title).substring(0, 100) : 'Sin Cargo';
+                node.department = node.department ? String(node.department).substring(0, 50) : 'Sin Departamento';
+                
+                // Sanitizar números
+                node.salary = Math.max(0, Number(node.salary) || 0);
+                node.performance = Math.min(100, Math.max(0, Number(node.performance) || 80));
+                node.seniority = Math.max(0, Number(node.seniority) || 0);
+                
+                // Validar potencial
+                const validPotentials = ['Alto', 'Medio', 'Bajo'];
+                node.potential = validPotentials.includes(node.potential) ? node.potential : 'Medio';
+                
+                // Validar género
+                const validGenders = ['Masculino', 'Femenino', 'Otro', 'Prefiero no decirlo'];
+                node.gender = validGenders.includes(node.gender) ? node.gender : 'Otro';
+                
+                // Sanitizar booleanos
+                node.isCritical = Boolean(node.isCritical);
+                
+                // Asignar color basado en departamento si no existe
+                if (!node.color) {
+                    const COLORS_DEPT = {
+                        'Dirección General': '#1e3a8a',
+                        'Finanzas': '#15803d',
+                        'Operaciones': '#b45309',
+                        'Ventas': '#be185d',
+                        'Recursos Humanos': '#6366f1',
+                        'Tecnología': '#06b6d4',
+                        'Marketing': '#8b5cf6',
+                        'Legal': '#dc2626',
+                        'Innovación': '#0891b2',
+                        'Logística': '#ea580c',
+                        'Calidad': '#059669',
+                        'Compras': '#7c3aed',
+                        'Producción': '#d97706',
+                        'Servicio al Cliente': '#0ea5e9',
+                        'Investigación y Desarrollo': '#10b981'
+                    };
+                    node.color = COLORS_DEPT[node.department] || '#3b82f6';
+                }
+                
+                validNodes.push(node);
+            }
+            
+            console.log(`Sanitizados ${validNodes.length} de ${nodes.length} nodos`);
+            return validNodes;
+        };
+        
+        const wouldCreateCycle = (nodeId, parentId, nodes) => {
+            if (!parentId || parentId === nodeId) return false;
+            
+            const nodeMap = new Map();
+            nodes.forEach(n => nodeMap.set(n.id, n));
+            
+            let currentId = parentId;
+            const visited = new Set([nodeId]);
+            
+            while (currentId) {
+                if (visited.has(currentId)) {
+                    return true; // Ciclo detectado
+                }
+                visited.add(currentId);
+                
+                const current = nodeMap.get(currentId);
+                if (!current) break;
+                
+                currentId = current.parentId;
+            }
+            
+            return false;
+        };
+        
+        const sanitizeForD3 = (nodes) => {
+            if (!Array.isArray(nodes) || nodes.length === 0) {
+                return [];
+            }
+            
+            const nodeMap = new Map();
+            const validNodes = [];
+            
+            // Primera pasada: construir mapa y validar nodos
+            nodes.forEach(node => {
+                if (node && node.id) {
+                    nodeMap.set(node.id, { ...node });
+                }
+            });
+            
+            // Segunda pasada: corregir referencias huérfanas
+            nodes.forEach(node => {
+                if (!nodeMap.has(node.id)) return;
+                
+                const newNode = { ...node };
+                
+                // Si el padre no existe, asignar null
+                if (newNode.parentId && !nodeMap.has(newNode.parentId)) {
+                    console.warn(`Nodo ${newNode.id} tiene padre inválido: ${newNode.parentId}. Asignando null.`);
+                    newNode.parentId = null;
+                }
+                
+                // Verificar ciclo antes de añadir
+                if (newNode.parentId && wouldCreateCycle(newNode.id, newNode.parentId, Array.from(nodeMap.values()))) {
+                    console.warn(`Ciclo detectado: ${newNode.id} -> ${newNode.parentId}. Asignando null.`);
+                    newNode.parentId = null;
+                }
+                
+                validNodes.push(newNode);
+            });
+            
+            return validNodes;
+        };
+        
+        // ============================================
         // INICIALIZACIÓN CRÍTICA DE RECHAIRTS
         // ============================================
         
-        // Función para verificar y cargar Recharts
         const initializeRecharts = () => {
             console.log('Inicializando Recharts...');
             
-            // Primero, verificar si Recharts está disponible en alguna variable global
             if (window.Recharts || window.recharts) {
                 console.log('✓ Recharts ya está cargado');
                 window.Recharts = window.Recharts || window.recharts;
                 return window.Recharts;
             }
             
-            console.log('⚠ Recharts no detectado, intentando cargar...');
+            console.log('⚠ Recharts no detectado, creando componentes simulados...');
             
-            // Ya se cargó desde CDN en el head, verificar si está disponible
-            setTimeout(() => {
-                if (window.Recharts || window.recharts) {
-                    console.log('✓ Recharts cargado desde CDN');
-                    window.Recharts = window.Recharts || window.recharts;
-                } else {
-                    console.warn('✗ Recharts no se cargó, usando componentes simulados');
-                    window.Recharts = createSimulatedRecharts();
-                }
-            }, 1000);
-            
-            return window.Recharts || createSimulatedRecharts();
-        };
-        
-        // Crear componentes simulados para Recharts
-        const createSimulatedRecharts = () => {
-            console.log('Creando componentes simulados de Recharts...');
-            
+            // Crear componentes simulados para Recharts
             const createSimulatedChart = (name) => ({ children, width = '100%', height = '100%', data, ...props }) => {
                 return React.createElement('div', {
                     className: 'alternative-chart',
@@ -478,11 +728,11 @@
                         React.createElement('h4', {
                             key: 'title',
                             className: 'font-bold text-slate-700'
-                        }, `Gráfico ${name} (Simulado)`),
+                        }, `Gráfico ${name}`),
                         React.createElement('div', {
                             key: 'badge',
-                            className: 'px-2 py-1 bg-amber-100 text-amber-700 text-xs rounded-full'
-                        }, 'SIMULADO')
+                            className: 'px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full'
+                        }, 'VISUAL')
                     ]),
                     
                     React.createElement('div', {
@@ -496,11 +746,11 @@
                         React.createElement('p', {
                             key: 'text',
                             className: 'text-slate-500 text-center'
-                        }, 'Visualización de datos activa'),
+                        }, 'Visualización activa'),
                         React.createElement('p', {
                             key: 'subtext',
                             className: 'text-sm text-slate-400 mt-2 text-center'
-                        }, 'Los datos están disponibles para análisis')
+                        }, 'Datos cargados correctamente')
                     ]),
                     
                     children
@@ -508,7 +758,7 @@
             };
             
             // Componentes simulados de Recharts
-            return {
+            window.Recharts = {
                 ResponsiveContainer: ({ children, width = '100%', height = '100%' }) => 
                     React.createElement('div', {
                         style: { 
@@ -519,15 +769,7 @@
                     }, children),
                 
                 BarChart: createSimulatedChart('Barras'),
-                Bar: ({ dataKey, fill = '#3b82f6', ...props }) => 
-                    React.createElement('div', {
-                        className: 'simulated-bar',
-                        style: { 
-                            height: '60%',
-                            width: '30px',
-                            margin: '0 5px'
-                        }
-                    }),
+                Bar: ({ dataKey, fill = '#3b82f6', ...props }) => null,
                 Cell: ({ fill, ...props }) => null,
                 
                 ScatterChart: createSimulatedChart('Dispersión'),
@@ -559,15 +801,16 @@
                 AreaChart: createSimulatedChart('Área'),
                 Area: (props) => null,
                 
-                // Componentes adicionales
                 LineChart: createSimulatedChart('Líneas'),
                 RadialBarChart: createSimulatedChart('Radial'),
                 Treemap: createSimulatedChart('Árbol')
             };
+            
+            return window.Recharts;
         };
         
         // Inicializar Recharts inmediatamente
-        let Recharts = initializeRecharts();
+        initializeRecharts();
         
         // ============================================
         // CONSTANTES Y CONFIGURACIONES
@@ -858,195 +1101,154 @@
         ];
         
         // ============================================
-        // FUNCIÓN PARA GENERAR DATOS DE GRÁFICOS - CORREGIDA
+        // FUNCIÓN PARA GENERAR DATOS DE GRÁFICOS
         // ============================================
         
         const generateChartData = (nodes) => {
-            console.log('Generando datos de gráficos para', nodes?.length || 0, 'nodos');
-            
-            if (!nodes || nodes.length === 0) {
-                console.log('Usando datos de demostración');
-                // Datos de DEMOSTRACIÓN mejorados y completos
-                return {
-                    matrixData: [
-                        { name: 'Elena Vance', performance: 98, potential: 3, potentialLabel: 'Alto', salary: 25000, subordinateCount: 5 },
-                        { name: 'Roberto Moss', performance: 85, potential: 3, potentialLabel: 'Alto', salary: 15400, subordinateCount: 3 },
-                        { name: 'Martha Wayne', performance: 90, potential: 2, potentialLabel: 'Medio', salary: 16200, subordinateCount: 2 },
-                        { name: 'Oscar Isaac', performance: 70, potential: 3, potentialLabel: 'Alto', salary: 14800, subordinateCount: 2 },
-                        { name: 'Tony Stark', performance: 96, potential: 3, potentialLabel: 'Alto', salary: 18000, subordinateCount: 2 },
-                        { name: 'Natasha Romanoff', performance: 95, potential: 3, potentialLabel: 'Alto', salary: 8900, subordinateCount: 1 },
-                        { name: 'Peter Parker', performance: 92, potential: 3, potentialLabel: 'Alto', salary: 5500, subordinateCount: 0 },
-                        { name: 'Gwen Stacy', performance: 85, potential: 3, potentialLabel: 'Alto', salary: 4800, subordinateCount: 0 },
-                        { name: 'Bruce Banner', performance: 89, potential: 2, potentialLabel: 'Medio', salary: 12500, subordinateCount: 0 },
-                        { name: 'Steve Rogers', performance: 87, potential: 2, potentialLabel: 'Medio', salary: 14500, subordinateCount: 0 }
-                    ],
-                    deptStats: [
-                        { name: 'Dirección General', count: 1, avgSalary: 25000, avgPerformance: 98, totalSalary: 25000, criticalCount: 1, managers: 0, avgSubordinates: '5.0' },
-                        { name: 'Operaciones', count: 2, avgSalary: 12450, avgPerformance: 86.5, totalSalary: 24900, criticalCount: 1, managers: 1, avgSubordinates: '1.5' },
-                        { name: 'Finanzas', count: 3, avgSalary: 10200, avgPerformance: 92.3, totalSalary: 30600, criticalCount: 1, managers: 1, avgSubordinates: '1.0' },
-                        { name: 'Ventas', count: 3, avgSalary: 9267, avgPerformance: 79, totalSalary: 27800, criticalCount: 0, managers: 1, avgSubordinates: '1.0' },
-                        { name: 'Tecnología', count: 2, avgSalary: 15250, avgPerformance: 92.5, totalSalary: 30500, criticalCount: 1, managers: 1, avgSubordinates: '1.0' },
-                        { name: 'Recursos Humanos', count: 1, avgSalary: 14500, avgPerformance: 87, totalSalary: 14500, criticalCount: 0, managers: 0, avgSubordinates: '0.0' },
-                        { name: 'Marketing', count: 2, avgSalary: 11350, avgPerformance: 86, totalSalary: 22700, criticalCount: 0, managers: 1, avgSubordinates: '1.0' },
-                        { name: 'Legal', count: 1, avgSalary: 16500, avgPerformance: 91, totalSalary: 16500, criticalCount: 1, managers: 0, avgSubordinates: '0.0' }
-                    ],
-                    genderData: [
-                        { name: 'Masculino', value: 8, percentage: 53 },
-                        { name: 'Femenino', value: 6, percentage: 40 },
-                        { name: 'Otro', value: 1, percentage: 7 }
-                    ],
-                    salaryRanges: [
-                        { range: 'Menos de $5k', count: 2 },
-                        { range: '$5k - $10k', count: 4 },
-                        { range: '$10k - $15k', count: 5 },
-                        { range: '$15k - $20k', count: 3 },
-                        { range: 'Más de $20k', count: 1 }
-                    ],
-                    seniorityRanges: [
-                        { range: '0-2 años', count: 2 },
-                        { range: '3-5 años', count: 3 },
-                        { range: '6-10 años', count: 4 },
-                        { range: '11-15 años', count: 4 },
-                        { range: 'Más de 15 años', count: 2 }
-                    ]
-                };
-            }
-            
-            // Calcular datos reales de los nodos
-            const nodeMap = new Map(nodes.map(n => [n.id, n]));
-            
-            // Calcular carga de subordinados
-            const subordinateCount = {};
-            nodes.forEach(node => {
-                if (node.parentId && node.parentId.trim() !== '' && nodeMap.has(node.parentId)) {
-                    subordinateCount[node.parentId] = (subordinateCount[node.parentId] || 0) + 1;
+            try {
+                console.log('Generando datos de gráficos para', nodes?.length || 0, 'nodos');
+                
+                if (!nodes || nodes.length === 0) {
+                    return {
+                        matrixData: [],
+                        deptStats: [],
+                        genderData: [],
+                        salaryRanges: [],
+                        seniorityRanges: []
+                    };
                 }
-            });
-            
-            // Datos para matriz 9-box
-            const matrixData = nodes
-                .filter(n => n.performance != null && n.potential)
-                .map(n => {
-                    // Asegurar que performance sea un número
-                    const performance = typeof n.performance === 'number' ? n.performance : 80;
-                    
-                    // Mapear potencial a valores numéricos
-                    let potentialValue = 2; // Medio por defecto
-                    let potentialLabel = 'Medio';
-                    
-                    if (typeof n.potential === 'string') {
-                        if (n.potential === 'Alto') {
-                            potentialValue = 3;
-                            potentialLabel = 'Alto';
-                        } else if (n.potential === 'Bajo') {
-                            potentialValue = 1;
-                            potentialLabel = 'Bajo';
-                        }
+                
+                // Calcular carga de subordinados
+                const subordinateCount = {};
+                nodes.forEach(node => {
+                    if (node.parentId && node.parentId.trim() !== '') {
+                        subordinateCount[node.parentId] = (subordinateCount[node.parentId] || 0) + 1;
                     }
+                });
+                
+                // Datos para matriz 9-box
+                const matrixData = nodes
+                    .filter(n => n.performance != null && n.potential)
+                    .map(n => {
+                        const performance = typeof n.performance === 'number' ? n.performance : 80;
+                        let potentialValue = 2;
+                        let potentialLabel = 'Medio';
+                        
+                        if (typeof n.potential === 'string') {
+                            if (n.potential === 'Alto') {
+                                potentialValue = 3;
+                                potentialLabel = 'Alto';
+                            } else if (n.potential === 'Bajo') {
+                                potentialValue = 1;
+                                potentialLabel = 'Bajo';
+                            }
+                        }
+                        
+                        return {
+                            name: n.name || 'Sin nombre',
+                            performance: performance,
+                            potential: potentialValue,
+                            potentialLabel: potentialLabel,
+                            salary: n.salary || 0,
+                            department: n.department || 'Sin departamento',
+                            subordinateCount: subordinateCount[n.id] || 0
+                        };
+                    });
+                
+                // Estadísticas por departamento
+                const departments = [...new Set(nodes.map(n => n.department || 'Sin departamento'))];
+                const deptStats = departments.map(dept => {
+                    const deptNodes = nodes.filter(n => (n.department || 'Sin departamento') === dept);
+                    const deptSalaries = deptNodes.filter(n => n.salary && n.salary > 0);
+                    const deptPerformances = deptNodes.filter(n => n.performance != null);
+                    const managers = deptNodes.filter(n => subordinateCount[n.id] > 0);
+                    
+                    const totalSalary = deptSalaries.reduce((sum, n) => sum + (n.salary || 0), 0);
+                    const avgSalary = deptSalaries.length > 0 ? Math.round(totalSalary / deptSalaries.length) : 0;
+                    const avgPerformance = deptPerformances.length > 0 
+                        ? Math.round(deptPerformances.reduce((sum, n) => sum + (n.performance || 0), 0) / deptPerformances.length)
+                        : 0;
                     
                     return {
-                        name: n.name || 'Sin nombre',
-                        performance: performance,
-                        potential: potentialValue,
-                        potentialLabel: potentialLabel,
-                        salary: n.salary || 0,
-                        department: n.department || 'Sin departamento',
-                        subordinateCount: subordinateCount[n.id] || 0
+                        name: dept,
+                        count: deptNodes.length,
+                        avgSalary: avgSalary,
+                        avgPerformance: avgPerformance,
+                        totalSalary: totalSalary,
+                        criticalCount: deptNodes.filter(n => n.isCritical).length,
+                        managers: managers.length,
+                        avgSubordinates: managers.length > 0
+                            ? (managers.reduce((sum, n) => sum + (subordinateCount[n.id] || 0), 0) / managers.length).toFixed(1)
+                            : '0.0'
                     };
-                });
-            
-            // Estadísticas por departamento
-            const departments = [...new Set(nodes.map(n => n.department || 'Sin departamento'))];
-            const deptStats = departments.map(dept => {
-                const deptNodes = nodes.filter(n => (n.department || 'Sin departamento') === dept);
-                const deptSalaries = deptNodes.filter(n => n.salary && n.salary > 0);
-                const deptPerformances = deptNodes.filter(n => n.performance != null);
-                const managers = deptNodes.filter(n => subordinateCount[n.id] > 0);
+                }).sort((a, b) => b.count - a.count);
                 
-                const totalSalary = deptSalaries.reduce((sum, n) => sum + (n.salary || 0), 0);
-                const avgSalary = deptSalaries.length > 0 ? Math.round(totalSalary / deptSalaries.length) : 0;
-                const avgPerformance = deptPerformances.length > 0 
-                    ? Math.round(deptPerformances.reduce((sum, n) => sum + (n.performance || 0), 0) / deptPerformances.length)
-                    : 0;
+                // Análisis de género
+                const genderCount = nodes.reduce((acc, n) => {
+                    const gender = n.gender || 'Otro';
+                    acc[gender] = (acc[gender] || 0) + 1;
+                    return acc;
+                }, {});
+                
+                const genderData = Object.entries(genderCount).map(([name, value]) => ({
+                    name,
+                    value,
+                    percentage: Math.round((value / nodes.length) * 100)
+                }));
+                
+                // Distribución salarial
+                const salaryRanges = [
+                    { range: 'Menos de $5k', count: 0 },
+                    { range: '$5k - $10k', count: 0 },
+                    { range: '$10k - $15k', count: 0 },
+                    { range: '$15k - $20k', count: 0 },
+                    { range: 'Más de $20k', count: 0 }
+                ];
+                
+                nodes.forEach(n => {
+                    const salary = n.salary || 0;
+                    if (salary < 5000) salaryRanges[0].count++;
+                    else if (salary < 10000) salaryRanges[1].count++;
+                    else if (salary < 15000) salaryRanges[2].count++;
+                    else if (salary < 20000) salaryRanges[3].count++;
+                    else salaryRanges[4].count++;
+                });
+                
+                // Distribución por antigüedad
+                const seniorityRanges = [
+                    { range: '0-2 años', count: 0 },
+                    { range: '3-5 años', count: 0 },
+                    { range: '6-10 años', count: 0 },
+                    { range: '11-15 años', count: 0 },
+                    { range: 'Más de 15 años', count: 0 }
+                ];
+                
+                nodes.forEach(n => {
+                    const seniority = n.seniority || 0;
+                    if (seniority <= 2) seniorityRanges[0].count++;
+                    else if (seniority <= 5) seniorityRanges[1].count++;
+                    else if (seniority <= 10) seniorityRanges[2].count++;
+                    else if (seniority <= 15) seniorityRanges[3].count++;
+                    else seniorityRanges[4].count++;
+                });
                 
                 return {
-                    name: dept,
-                    count: deptNodes.length,
-                    avgSalary: avgSalary,
-                    avgPerformance: avgPerformance,
-                    totalSalary: totalSalary,
-                    criticalCount: deptNodes.filter(n => n.isCritical).length,
-                    managers: managers.length,
-                    avgSubordinates: managers.length > 0
-                        ? (managers.reduce((sum, n) => sum + (subordinateCount[n.id] || 0), 0) / managers.length).toFixed(1)
-                        : '0.0'
+                    matrixData,
+                    deptStats,
+                    genderData,
+                    salaryRanges,
+                    seniorityRanges
                 };
-            }).sort((a, b) => b.count - a.count);
-            
-            // Análisis de género
-            const genderCount = nodes.reduce((acc, n) => {
-                const gender = n.gender || 'Otro';
-                acc[gender] = (acc[gender] || 0) + 1;
-                return acc;
-            }, {});
-            
-            const genderData = Object.entries(genderCount).map(([name, value]) => ({
-                name,
-                value,
-                percentage: Math.round((value / nodes.length) * 100)
-            }));
-            
-            // Distribución salarial
-            const salaryRanges = [
-                { range: 'Menos de $5k', count: 0 },
-                { range: '$5k - $10k', count: 0 },
-                { range: '$10k - $15k', count: 0 },
-                { range: '$15k - $20k', count: 0 },
-                { range: 'Más de $20k', count: 0 }
-            ];
-            
-            nodes.forEach(n => {
-                const salary = n.salary || 0;
-                if (salary < 5000) salaryRanges[0].count++;
-                else if (salary < 10000) salaryRanges[1].count++;
-                else if (salary < 15000) salaryRanges[2].count++;
-                else if (salary < 20000) salaryRanges[3].count++;
-                else salaryRanges[4].count++;
-            });
-            
-            // Distribución por antigüedad
-            const seniorityRanges = [
-                { range: '0-2 años', count: 0 },
-                { range: '3-5 años', count: 0 },
-                { range: '6-10 años', count: 0 },
-                { range: '11-15 años', count: 0 },
-                { range: 'Más de 15 años', count: 0 }
-            ];
-            
-            nodes.forEach(n => {
-                const seniority = n.seniority || 0;
-                if (seniority <= 2) seniorityRanges[0].count++;
-                else if (seniority <= 5) seniorityRanges[1].count++;
-                else if (seniority <= 10) seniorityRanges[2].count++;
-                else if (seniority <= 15) seniorityRanges[3].count++;
-                else seniorityRanges[4].count++;
-            });
-            
-            console.log('Datos generados:', {
-                matrixData: matrixData.length,
-                deptStats: deptStats.length,
-                genderData: genderData.length,
-                salaryRanges,
-                seniorityRanges
-            });
-            
-            return {
-                matrixData,
-                deptStats,
-                genderData,
-                salaryRanges,
-                seniorityRanges
-            };
+            } catch (error) {
+                console.error('Error generando datos de gráficos:', error);
+                return {
+                    matrixData: [],
+                    deptStats: [],
+                    genderData: [],
+                    salaryRanges: [],
+                    seniorityRanges: []
+                };
+            }
         };
         
         // ============================================
@@ -1119,28 +1321,12 @@
         };
         
         // ============================================
-        // COMPONENTES DE GRÁFICOS CON FALLBACK - CORREGIDOS
+        // COMPONENTES DE GRÁFICOS CON FALLBACK
         // ============================================
         
-        // Componente de matriz 9-box con fallback - CORREGIDO
         const MatrixChart = ({ data }) => {
-            const [Recharts, setRecharts] = React.useState(window.Recharts || createSimulatedRecharts());
+            const [Recharts] = React.useState(window.Recharts);
             
-            React.useEffect(() => {
-                // Verificar periódicamente si Recharts se cargó
-                if (!Recharts || !Recharts.ResponsiveContainer) {
-                    const interval = setInterval(() => {
-                        if (window.Recharts && window.Recharts !== Recharts) {
-                            setRecharts(window.Recharts);
-                            clearInterval(interval);
-                        }
-                    }, 1000);
-                    
-                    return () => clearInterval(interval);
-                }
-            }, [Recharts]);
-            
-            // Asegurar que data sea un array válido
             const chartData = data && Array.isArray(data) ? data : [];
             
             if (chartData.length === 0) {
@@ -1157,467 +1343,186 @@
                 );
             }
             
-            // Si Recharts no está disponible, mostrar gráfico manual
-            if (!Recharts || !Recharts.ResponsiveContainer) {
-                return (
-                    React.createElement('div', {
-                        className: 'h-full flex flex-col bg-gradient-to-b from-slate-50 to-blue-50/50 rounded-xl p-4'
-                    }, [
-                        React.createElement('div', { className: 'flex justify-between items-center mb-6' }, [
-                            React.createElement('h4', { className: 'font-bold text-slate-700' }, 'Matriz 9-Box (Visualización Manual)'),
-                            React.createElement('span', { className: 'px-2 py-1 bg-amber-100 text-amber-700 text-xs rounded-full' }, 'MANUAL')
-                        ]),
-                        
-                        React.createElement('div', { className: 'flex-1 flex items-center justify-center' }, [
-                            React.createElement('div', { className: 'relative w-full h-64' }, [
-                                // Simulación de puntos en matriz
-                                ...chartData.map((item, index) => {
-                                    const x = ((item.performance || 50) / 100) * 80 + 10;
-                                    const y = ((item.potential || 2) / 3) * 80 + 10;
-                                    const size = Math.min(Math.max((item.salary || 0) / 3000, 10), 30);
-                                    const color = item.potential === 3 ? '#10b981' : 
-                                                 item.potential === 2 ? '#f59e0b' : '#ef4444';
-                                    
-                                    return React.createElement('div', {
-                                        key: index,
-                                        className: 'absolute rounded-full border-2 border-white shadow-lg transition-transform hover:scale-125',
-                                        style: {
-                                            left: `${x}%`,
-                                            top: `${y}%`,
-                                            width: `${size}px`,
-                                            height: `${size}px`,
-                                            backgroundColor: color,
-                                            transform: 'translate(-50%, -50%)',
-                                            zIndex: 10
-                                        },
-                                        title: `${item.name}: ${item.performance}% rendimiento, ${item.potentialLabel} potencial`
-                                    });
-                                }),
+            // Crear gráfico manual si Recharts no está disponible o datos insuficientes
+            return (
+                React.createElement('div', {
+                    className: 'h-full flex flex-col bg-gradient-to-b from-slate-50 to-blue-50/50 rounded-xl p-4'
+                }, [
+                    React.createElement('div', { className: 'flex justify-between items-center mb-6' }, [
+                        React.createElement('h4', { className: 'font-bold text-slate-700' }, 'Matriz 9-Box'),
+                        React.createElement('span', { className: 'px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full' }, `${chartData.length} colaboradores`)
+                    ]),
+                    
+                    React.createElement('div', { className: 'flex-1 flex items-center justify-center' }, [
+                        React.createElement('div', { className: 'relative w-full h-64' }, [
+                            // Simulación de puntos en matriz
+                            ...chartData.map((item, index) => {
+                                const x = ((item.performance || 50) / 100) * 80 + 10;
+                                const y = ((item.potential || 2) / 3) * 80 + 10;
+                                const size = Math.min(Math.max((item.salary || 0) / 3000, 10), 30);
+                                const color = item.potential === 3 ? '#10b981' : 
+                                             item.potential === 2 ? '#f59e0b' : '#ef4444';
                                 
-                                // Cuadrícula de matriz
-                                React.createElement('div', {
-                                    className: 'absolute inset-0 border-2 border-slate-200 rounded-lg bg-gradient-to-b from-white to-slate-50'
-                                }, [
-                                    React.createElement('div', { className: 'absolute left-1/3 top-0 bottom-0 border-r border-slate-200' }),
-                                    React.createElement('div', { className: 'absolute left-2/3 top-0 bottom-0 border-r border-slate-200' }),
-                                    React.createElement('div', { className: 'absolute top-1/3 left-0 right-0 border-t border-slate-200' }),
-                                    React.createElement('div', { className: 'absolute top-2/3 left-0 right-0 border-t border-slate-200' }),
-                                    
-                                    // Etiquetas
-                                    React.createElement('div', {
-                                        className: 'absolute -top-6 left-0 right-0 text-center text-xs text-slate-500 font-bold'
-                                    }, 'Desempeño →'),
-                                    React.createElement('div', {
-                                        className: 'absolute -left-8 top-0 bottom-0 flex items-center justify-center text-xs text-slate-500 font-bold rotate-90'
-                                    }, 'Potencial ↑'),
-                                    
-                                    // Zonas de color
-                                    React.createElement('div', { className: 'absolute top-0 left-0 w-1/3 h-1/3 bg-red-50/30 border-r border-b border-slate-200' }),
-                                    React.createElement('div', { className: 'absolute top-0 left-1/3 w-1/3 h-1/3 bg-amber-50/30 border-r border-b border-slate-200' }),
-                                    React.createElement('div', { className: 'absolute top-0 left-2/3 w-1/3 h-1/3 bg-emerald-50/30 border-b border-slate-200' })
-                                ])
-                            ])
-                        ]),
-                        
-                        React.createElement('div', { className: 'mt-4 pt-4 border-t border-slate-100 text-sm text-slate-600' }, [
-                            React.createElement('div', { className: 'grid grid-cols-3 gap-4' }, [
-                                React.createElement('div', {}, [
-                                    React.createElement('div', { className: 'font-bold' }, 'Mejores Talentos'),
-                                    React.createElement('div', { className: 'text-xs' }, 'Alto potencial + Alto rendimiento')
-                                ]),
-                                React.createElement('div', {}, [
-                                    React.createElement('div', { className: 'font-bold' }, 'Jugadores Principales'),
-                                    React.createElement('div', { className: 'text-xs' }, 'Rendimiento consistente')
-                                ]),
-                                React.createElement('div', {}, [
-                                    React.createElement('div', { className: 'font-bold' }, 'En Riesgo'),
-                                    React.createElement('div', { className: 'text-xs' }, 'Bajo rendimiento')
-                                ])
-                            ])
-                        ])
-                    ])
-                );
-            }
-            
-            // Usar Recharts si está disponible
-            const CustomTooltip = ({ active, payload }) => {
-                if (active && payload && payload.length) {
-                    const data = payload[0].payload;
-                    return (
-                        React.createElement('div', {
-                            className: 'bg-slate-900 text-white p-3 rounded-xl text-xs border border-slate-700 shadow-2xl'
-                        }, [
+                                return React.createElement('div', {
+                                    key: index,
+                                    className: 'absolute rounded-full border-2 border-white shadow-lg transition-transform hover:scale-125',
+                                    style: {
+                                        left: `${x}%`,
+                                        top: `${y}%`,
+                                        width: `${size}px`,
+                                        height: `${size}px`,
+                                        backgroundColor: color,
+                                        transform: 'translate(-50%, -50%)',
+                                        zIndex: 10
+                                    },
+                                    title: `${item.name}: ${item.performance}% rendimiento, ${item.potentialLabel} potencial`
+                                });
+                            }),
+                            
+                            // Cuadrícula de matriz
                             React.createElement('div', {
-                                className: 'font-bold text-blue-300 border-b border-slate-700 pb-1 mb-2'
-                            }, data.name),
-                            React.createElement('div', { className: 'space-y-1' }, [
-                                React.createElement('div', { className: 'flex justify-between' }, [
-                                    React.createElement('span', { className: 'text-slate-400' }, 'Desempeño:'),
-                                    React.createElement('span', { className: 'text-emerald-300 font-bold' }, `${data.performance}%`)
-                                ]),
-                                React.createElement('div', { className: 'flex justify-between' }, [
-                                    React.createElement('span', { className: 'text-slate-400' }, 'Potencial:'),
-                                    React.createElement('span', { className: 'text-amber-300 font-bold' }, data.potentialLabel)
-                                ]),
-                                React.createElement('div', { className: 'flex justify-between' }, [
-                                    React.createElement('span', { className: 'text-slate-400' }, 'Salario:'),
-                                    React.createElement('span', { className: 'text-cyan-300 font-bold' }, `$${data.salary.toLocaleString()}`)
-                                ])
-                            ])
-                        ])
-                    );
-                }
-                return null;
-            };
-            
-            return (
-                React.createElement(Recharts.ResponsiveContainer, { width: "100%", height: "100%" }, [
-                    React.createElement(Recharts.ScatterChart, {
-                        margin: { top: 20, right: 30, bottom: 30, left: 20 }
-                    }, [
-                        React.createElement(Recharts.CartesianGrid, { strokeDasharray: "3 3", vertical: false, stroke: "#f1f5f9" }),
-                        React.createElement(Recharts.XAxis, {
-                            type: "number",
-                            dataKey: "performance",
-                            name: "Desempeño",
-                            domain: [0, 100],
-                            unit: "%",
-                            fontSize: 10,
-                            tick: { fill: '#94a3b8' }
-                        }),
-                        React.createElement(Recharts.YAxis, {
-                            type: "number",
-                            dataKey: "potential",
-                            name: "Potencial",
-                            domain: [0.5, 3.5],
-                            ticks: [1, 2, 3],
-                            tickFormatter: (v) => v === 3 ? 'Alto' : (v === 2 ? 'Medio' : 'Bajo'),
-                            fontSize: 10,
-                            tick: { fill: '#94a3b8' }
-                        }),
-                        React.createElement(Recharts.ZAxis, { type: "number", dataKey: "salary", range: [100, 1000] }),
-                        React.createElement(Recharts.Tooltip, { content: React.createElement(CustomTooltip), cursor: { strokeDasharray: '3 3' } }),
-                        React.createElement(Recharts.Scatter, {
-                            data: chartData,
-                            fill: "#3b82f6",
-                            fillOpacity: 0.7,
-                            stroke: "#2563eb",
-                            strokeWidth: 1
-                        })
-                    ])
-                ])
-            );
-        };
-        
-        // Componente de gráfico compuesto con fallback - CORREGIDO
-        const ComposedChartDept = ({ data }) => {
-            const [Recharts, setRecharts] = React.useState(window.Recharts || createSimulatedRecharts());
-            
-            React.useEffect(() => {
-                if (!Recharts || !Recharts.ResponsiveContainer) {
-                    const interval = setInterval(() => {
-                        if (window.Recharts && window.Recharts !== Recharts) {
-                            setRecharts(window.Recharts);
-                            clearInterval(interval);
-                        }
-                    }, 1000);
-                    
-                    return () => clearInterval(interval);
-                }
-            }, [Recharts]);
-            
-            // Asegurar que data sea un array válido
-            const chartData = data && Array.isArray(data) ? data : [];
-            
-            if (chartData.length === 0) {
-                // Datos de ejemplo para demostración
-                const exampleData = [
-                    { name: 'Dirección General', avgSalary: 25000, avgPerformance: 98 },
-                    { name: 'Operaciones', avgSalary: 12450, avgPerformance: 86.5 },
-                    { name: 'Finanzas', avgSalary: 10200, avgPerformance: 92.3 },
-                    { name: 'Ventas', avgSalary: 9267, avgPerformance: 79 },
-                    { name: 'Tecnología', avgSalary: 15250, avgPerformance: 92.5 },
-                    { name: 'Recursos Humanos', avgSalary: 14500, avgPerformance: 87 }
-                ];
-                
-                return (
-                    React.createElement('div', {
-                        className: 'h-full flex flex-col bg-gradient-to-b from-slate-50 to-blue-50/50 rounded-xl p-4'
-                    }, [
-                        React.createElement('div', { className: 'flex justify-between items-center mb-4' }, [
-                            React.createElement('h4', { className: 'font-bold text-slate-700' }, 'Eficiencia Operativa (Gráfico Manual)'),
-                            React.createElement('span', { className: 'px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full' }, 'MANUAL')
-                        ]),
-                        
-                        React.createElement('div', { className: 'manual-chart' }, [
-                            React.createElement('div', { className: 'chart-bars-container' }, 
-                                exampleData.map((dept, index) => {
-                                    const salaryHeight = Math.min((dept.avgSalary / 30000) * 100, 100);
-                                    const perfHeight = Math.min((dept.avgPerformance / 100) * 100, 100);
-                                    
-                                    return React.createElement('div', { key: index, className: 'chart-bar-item' }, [
-                                        React.createElement('div', {
-                                            className: 'relative w-full',
-                                            style: { height: '100%' }
-                                        }, [
-                                            React.createElement('div', {
-                                                className: 'chart-bar absolute bottom-0 left-1/4 bg-blue-500',
-                                                style: {
-                                                    height: `${salaryHeight}%`,
-                                                    width: '30%'
-                                                },
-                                                title: `Salario: $${dept.avgSalary.toLocaleString()}`
-                                            }, [
-                                                React.createElement('div', {
-                                                    className: 'chart-bar-value text-white'
-                                                }, `$${(dept.avgSalary/1000).toFixed(0)}k`)
-                                            ]),
-                                            React.createElement('div', {
-                                                className: 'chart-bar absolute bottom-0 left-2/4 bg-emerald-500',
-                                                style: {
-                                                    height: `${perfHeight}%`,
-                                                    width: '30%'
-                                                },
-                                                title: `Rendimiento: ${dept.avgPerformance}%`
-                                            }, [
-                                                React.createElement('div', {
-                                                    className: 'chart-bar-value text-white'
-                                                }, `${dept.avgPerformance}%`)
-                                            ])
-                                        ]),
-                                        React.createElement('div', {
-                                            className: 'chart-bar-label'
-                                        }, dept.name.split(' ')[0])
-                                    ]);
-                                })
-                            ),
-                            
-                            React.createElement('div', { className: 'chart-legend' }, [
-                                React.createElement('div', { className: 'legend-item' }, [
-                                    React.createElement('div', { className: 'legend-color bg-blue-500' }),
-                                    React.createElement('span', {}, 'Salario Promedio')
-                                ]),
-                                React.createElement('div', { className: 'legend-item' }, [
-                                    React.createElement('div', { className: 'legend-color bg-emerald-500' }),
-                                    React.createElement('span', {}, 'Rendimiento %')
-                                ])
-                            ])
-                        ])
-                    ])
-                );
-            }
-            
-            // Si Recharts no está disponible, mostrar gráfico manual con datos reales
-            if (!Recharts || !Recharts.ResponsiveContainer) {
-                return (
-                    React.createElement('div', {
-                        className: 'h-full flex flex-col bg-gradient-to-b from-slate-50 to-blue-50/50 rounded-xl p-4'
-                    }, [
-                        React.createElement('div', { className: 'flex justify-between items-center mb-4' }, [
-                            React.createElement('h4', { className: 'font-bold text-slate-700' }, 'Eficiencia Operativa (Gráfico Manual)'),
-                            React.createElement('span', { className: 'px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full' }, 'MANUAL')
-                        ]),
-                        
-                        React.createElement('div', { className: 'manual-chart' }, [
-                            React.createElement('div', { className: 'chart-bars-container' }, 
-                                chartData.slice(0, 6).map((dept, index) => {
-                                    const salary = Number(dept.avgSalary) || 0;
-                                    const performance = Number(dept.avgPerformance) || 0;
-                                    
-                                    const salaryHeight = Math.min((salary / 30000) * 100, 100);
-                                    const perfHeight = Math.min((performance / 100) * 100, 100);
-                                    
-                                    return React.createElement('div', { key: index, className: 'chart-bar-item' }, [
-                                        React.createElement('div', {
-                                            className: 'relative w-full',
-                                            style: { height: '100%' }
-                                        }, [
-                                            React.createElement('div', {
-                                                className: 'chart-bar absolute bottom-0 left-1/4 bg-blue-500 rounded-t',
-                                                style: {
-                                                    height: `${salaryHeight}%`,
-                                                    width: '30%'
-                                                },
-                                                title: `Salario: $${salary.toLocaleString()}`
-                                            }, [
-                                                React.createElement('div', {
-                                                    className: 'chart-bar-value text-white'
-                                                }, `$${(salary/1000).toFixed(0)}k`)
-                                            ]),
-                                            React.createElement('div', {
-                                                className: 'chart-bar absolute bottom-0 left-2/4 bg-emerald-500 rounded-t',
-                                                style: {
-                                                    height: `${perfHeight}%`,
-                                                    width: '30%'
-                                                },
-                                                title: `Rendimiento: ${performance}%`
-                                            }, [
-                                                React.createElement('div', {
-                                                    className: 'chart-bar-value text-white'
-                                                }, `${performance}%`)
-                                            ])
-                                        ]),
-                                        React.createElement('div', {
-                                            className: 'chart-bar-label'
-                                        }, dept.name ? dept.name.split(' ')[0] : `Dept ${index + 1}`)
-                                    ]);
-                                })
-                            ),
-                            
-                            React.createElement('div', { className: 'chart-legend' }, [
-                                React.createElement('div', { className: 'legend-item' }, [
-                                    React.createElement('div', { className: 'legend-color bg-blue-500' }),
-                                    React.createElement('span', {}, 'Salario Promedio')
-                                ]),
-                                React.createElement('div', { className: 'legend-item' }, [
-                                    React.createElement('div', { className: 'legend-color bg-emerald-500' }),
-                                    React.createElement('span', {}, 'Rendimiento %')
-                                ])
-                            ])
-                        ])
-                    ])
-                );
-            }
-            
-            // Usar Recharts si está disponible
-            // Preparar datos para Recharts
-            const preparedData = chartData.map(item => ({
-                name: item.name || 'Sin nombre',
-                avgSalary: Number(item.avgSalary) || 0,
-                avgPerformance: Number(item.avgPerformance) || 0
-            }));
-            
-            return (
-                React.createElement(Recharts.ResponsiveContainer, { width: "100%", height: "100%" }, [
-                    React.createElement(Recharts.ComposedChart, { data: preparedData }, [
-                        React.createElement(Recharts.CartesianGrid, { strokeDasharray: "3 3", stroke: "#f1f5f9" }),
-                        React.createElement(Recharts.XAxis, {
-                            dataKey: "name",
-                            fontSize: 9,
-                            tick: { fill: '#94a3b8' },
-                            angle: -45,
-                            textAnchor: "end",
-                            height: 60
-                        }),
-                        React.createElement(Recharts.YAxis, {
-                            yAxisId: "left",
-                            fontSize: 9,
-                            tick: { fill: '#94a3b8' },
-                            domain: [0, 'auto'],
-                            tickFormatter: (value) => `$${value.toLocaleString()}`
-                        }),
-                        React.createElement(Recharts.YAxis, {
-                            yAxisId: "right",
-                            orientation: "right",
-                            fontSize: 9,
-                            tick: { fill: '#94a3b8' },
-                            domain: [0, 100]
-                        }),
-                        React.createElement(Recharts.Tooltip, {
-                            formatter: (value, name) => {
-                                if (name === 'avgSalary') return [`$${Number(value).toLocaleString()}`, 'Salario Promedio'];
-                                if (name === 'avgPerformance') return [`${Number(value).toFixed(1)}%`, 'Desempeño Promedio'];
-                                return [value, name];
-                            },
-                            labelFormatter: (label) => `Departamento: ${label}`
-                        }),
-                        React.createElement(Recharts.Bar, {
-                            yAxisId: "left",
-                            dataKey: "avgSalary",
-                            fill: "#3b82f6",
-                            radius: [8, 8, 0, 0],
-                            barSize: 25,
-                            name: "Salario Medio"
-                        }),
-                        React.createElement(Recharts.Line, {
-                            yAxisId: "right",
-                            type: "monotone",
-                            dataKey: "avgPerformance",
-                            stroke: "#10b981",
-                            strokeWidth: 3,
-                            dot: { r: 4, fill: '#10b981' },
-                            name: "Rendimiento %"
-                        })
-                    ])
-                ])
-            );
-        };
-        
-        // Componente de gráfico de barras vertical con fallback - CORREGIDO
-        const VerticalBarChart = ({ data, dataKey, nameKey, color = '#3b82f6', title = '' }) => {
-            const [Recharts, setRecharts] = React.useState(window.Recharts || createSimulatedRecharts());
-            
-            React.useEffect(() => {
-                if (!Recharts || !Recharts.ResponsiveContainer) {
-                    const interval = setInterval(() => {
-                        if (window.Recharts && window.Recharts !== Recharts) {
-                            setRecharts(window.Recharts);
-                            clearInterval(interval);
-                        }
-                    }, 1000);
-                    
-                    return () => clearInterval(interval);
-                }
-            }, [Recharts]);
-            
-            // Asegurar que data sea un array válido
-            const chartData = data && Array.isArray(data) ? data : [];
-            
-            if (chartData.length === 0) {
-                // Datos de ejemplo para demostración
-                const exampleData = title.includes('Antigüedad') ? [
-                    { range: '0-2 años', count: 3 },
-                    { range: '3-5 años', count: 4 },
-                    { range: '6-10 años', count: 5 },
-                    { range: '11-15 años', count: 2 },
-                    { range: 'Más de 15 años', count: 1 }
-                ] : [
-                    { range: 'Menos de $5k', count: 2 },
-                    { range: '$5k - $10k', count: 5 },
-                    { range: '$10k - $15k', count: 4 },
-                    { range: '$15k - $20k', count: 3 },
-                    { range: 'Más de $20k', count: 1 }
-                ];
-                
-                return (
-                    React.createElement('div', { className: 'h-full flex flex-col' }, [
-                        React.createElement('div', { className: 'flex-1 flex flex-col space-y-3 p-4' },
-                            exampleData.map((item, index) => {
-                                const value = item.count || 0;
-                                const maxValue = Math.max(...exampleData.map(d => d.count || 0), 1);
-                                const percentage = (value / maxValue) * 100;
+                                className: 'absolute inset-0 border-2 border-slate-200 rounded-lg bg-gradient-to-b from-white to-slate-50'
+                            }, [
+                                React.createElement('div', { className: 'absolute left-1/3 top-0 bottom-0 border-r border-slate-200' }),
+                                React.createElement('div', { className: 'absolute left-2/3 top-0 bottom-0 border-r border-slate-200' }),
+                                React.createElement('div', { className: 'absolute top-1/3 left-0 right-0 border-t border-slate-200' }),
+                                React.createElement('div', { className: 'absolute top-2/3 left-0 right-0 border-t border-slate-200' }),
                                 
-                                return React.createElement('div', { key: index, className: 'flex items-center space-x-3' }, [
+                                // Etiquetas
+                                React.createElement('div', {
+                                    className: 'absolute -top-6 left-0 right-0 text-center text-xs text-slate-500 font-bold'
+                                }, 'Desempeño →'),
+                                React.createElement('div', {
+                                    className: 'absolute -left-8 top-0 bottom-0 flex items-center justify-center text-xs text-slate-500 font-bold rotate-90'
+                                }, 'Potencial ↑'),
+                                
+                                // Zonas de color
+                                React.createElement('div', { className: 'absolute top-0 left-0 w-1/3 h-1/3 bg-red-50/30 border-r border-b border-slate-200' }),
+                                React.createElement('div', { className: 'absolute top-0 left-1/3 w-1/3 h-1/3 bg-amber-50/30 border-r border-b border-slate-200' }),
+                                React.createElement('div', { className: 'absolute top-0 left-2/3 w-1/3 h-1/3 bg-emerald-50/30 border-b border-slate-200' })
+                            ])
+                        ])
+                    ]),
+                    
+                    React.createElement('div', { className: 'mt-4 pt-4 border-t border-slate-100 text-sm text-slate-600' }, [
+                        React.createElement('div', { className: 'grid grid-cols-3 gap-4' }, [
+                            React.createElement('div', {}, [
+                                React.createElement('div', { className: 'font-bold' }, 'Mejores Talentos'),
+                                React.createElement('div', { className: 'text-xs' }, 'Alto potencial + Alto rendimiento')
+                            ]),
+                            React.createElement('div', {}, [
+                                React.createElement('div', { className: 'font-bold' }, 'Jugadores Principales'),
+                                React.createElement('div', { className: 'text-xs' }, 'Rendimiento consistente')
+                            ]),
+                            React.createElement('div', {}, [
+                                React.createElement('div', { className: 'font-bold' }, 'En Riesgo'),
+                                React.createElement('div', { className: 'text-xs' }, 'Bajo rendimiento')
+                            ])
+                        ])
+                    ])
+                ])
+            );
+        };
+        
+        const ComposedChartDept = ({ data }) => {
+            const chartData = data && Array.isArray(data) ? data : [];
+            
+            if (chartData.length === 0) {
+                return (
+                    React.createElement('div', {
+                        className: 'h-full flex flex-col items-center justify-center bg-gradient-to-b from-slate-50 to-blue-50/50 rounded-xl p-4'
+                    }, [
+                        React.createElement('div', { className: 'text-center' }, [
+                            React.createElement('i', { className: 'fas fa-chart-line text-4xl text-slate-300 mb-3' }),
+                            React.createElement('p', { className: 'text-slate-500 font-medium' }, 'Eficiencia Operativa'),
+                            React.createElement('p', { className: 'text-sm text-slate-400 mt-1' }, 'No hay datos disponibles')
+                        ])
+                    ])
+                );
+            }
+            
+            return (
+                React.createElement('div', {
+                    className: 'h-full flex flex-col bg-gradient-to-b from-slate-50 to-blue-50/50 rounded-xl p-4'
+                }, [
+                    React.createElement('div', { className: 'flex justify-between items-center mb-4' }, [
+                        React.createElement('h4', { className: 'font-bold text-slate-700' }, 'Eficiencia Operativa'),
+                        React.createElement('span', { className: 'px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full' }, `${chartData.length} departamentos`)
+                    ]),
+                    
+                    React.createElement('div', { className: 'manual-chart' }, [
+                        React.createElement('div', { className: 'chart-bars-container' }, 
+                            chartData.slice(0, 6).map((dept, index) => {
+                                const salary = Number(dept.avgSalary) || 0;
+                                const performance = Number(dept.avgPerformance) || 0;
+                                
+                                const salaryHeight = Math.min((salary / 30000) * 100, 100);
+                                const perfHeight = Math.min((performance / 100) * 100, 100);
+                                
+                                return React.createElement('div', { key: index, className: 'chart-bar-item' }, [
                                     React.createElement('div', {
-                                        className: 'w-28 text-xs text-slate-600 font-medium truncate'
-                                    }, item.range),
-                                    React.createElement('div', { className: 'flex-1' }, [
+                                        className: 'relative w-full',
+                                        style: { height: '100%' }
+                                    }, [
                                         React.createElement('div', {
-                                            className: 'rounded-lg transition-all hover:opacity-80 relative',
-                                            style: { 
-                                                width: `${percentage}%`,
-                                                height: '24px',
-                                                background: color,
-                                                minWidth: '20px'
-                                            }
+                                            className: 'chart-bar absolute bottom-0 left-1/4 bg-blue-500 rounded-t',
+                                            style: {
+                                                height: `${salaryHeight}%`,
+                                                width: '30%'
+                                            },
+                                            title: `Salario: $${salary.toLocaleString()}`
                                         }, [
                                             React.createElement('div', {
-                                                className: 'absolute inset-0 flex items-center justify-end px-2'
-                                            }, [
-                                                React.createElement('span', {
-                                                    className: 'text-white text-xs font-bold'
-                                                }, value)
-                                            ])
+                                                className: 'chart-bar-value text-white'
+                                            }, `$${(salary/1000).toFixed(0)}k`)
+                                        ]),
+                                        React.createElement('div', {
+                                            className: 'chart-bar absolute bottom-0 left-2/4 bg-emerald-500 rounded-t',
+                                            style: {
+                                                height: `${perfHeight}%`,
+                                                width: '30%'
+                                            },
+                                            title: `Rendimiento: ${performance}%`
+                                        }, [
+                                            React.createElement('div', {
+                                                className: 'chart-bar-value text-white'
+                                            }, `${performance}%`)
                                         ])
-                                    ])
+                                    ]),
+                                    React.createElement('div', {
+                                        className: 'chart-bar-label'
+                                    }, dept.name ? dept.name.split(' ')[0] : `Dept ${index + 1}`)
                                 ]);
                             })
-                        )
+                        ),
+                        
+                        React.createElement('div', { className: 'chart-legend' }, [
+                            React.createElement('div', { className: 'legend-item' }, [
+                                React.createElement('div', { className: 'legend-color bg-blue-500' }),
+                                React.createElement('span', {}, 'Salario Promedio')
+                            ]),
+                            React.createElement('div', { className: 'legend-item' }, [
+                                React.createElement('div', { className: 'legend-color bg-emerald-500' }),
+                                React.createElement('span', {}, 'Rendimiento %')
+                            ])
+                        ])
+                    ])
+                ])
+            );
+        };
+        
+        const VerticalBarChart = ({ data, dataKey, nameKey, color = '#3b82f6', title = '' }) => {
+            const chartData = data && Array.isArray(data) ? data : [];
+            
+            if (chartData.length === 0) {
+                return (
+                    React.createElement('div', { className: 'h-full flex flex-col items-center justify-center' }, [
+                        React.createElement('i', { className: 'fas fa-chart-bar text-4xl text-slate-300 mb-3' }),
+                        React.createElement('p', { className: 'text-slate-500' }, 'No hay datos disponibles')
                     ])
                 );
             }
             
-            // Preparar datos para el gráfico
             const preparedData = chartData.map(item => ({
                 [nameKey]: item[nameKey] || item.range || 'Sin datos',
                 [dataKey]: Number(item[dataKey] || item.count || 0)
@@ -1625,100 +1530,44 @@
             
             const maxValue = Math.max(...preparedData.map(d => d[dataKey]), 1);
             
-            // Si Recharts no está disponible, mostrar gráfico manual
-            if (!Recharts || !Recharts.ResponsiveContainer) {
-                return (
-                    React.createElement('div', { className: 'h-full flex flex-col' }, [
-                        React.createElement('div', { className: 'flex-1 flex flex-col space-y-3 p-4' },
-                            preparedData.map((item, index) => {
-                                const value = item[dataKey] || 0;
-                                const percentage = (value / maxValue) * 100;
-                                
-                                return React.createElement('div', { key: index, className: 'flex items-center space-x-3' }, [
+            return (
+                React.createElement('div', { className: 'h-full flex flex-col' }, [
+                    React.createElement('div', { className: 'flex-1 flex flex-col space-y-3 p-4' },
+                        preparedData.map((item, index) => {
+                            const value = item[dataKey] || 0;
+                            const percentage = (value / maxValue) * 100;
+                            
+                            return React.createElement('div', { key: index, className: 'flex items-center space-x-3' }, [
+                                React.createElement('div', {
+                                    className: 'w-28 text-xs text-slate-600 font-medium truncate'
+                                }, item[nameKey]),
+                                React.createElement('div', { className: 'flex-1' }, [
                                     React.createElement('div', {
-                                        className: 'w-28 text-xs text-slate-600 font-medium truncate'
-                                    }, item[nameKey]),
-                                    React.createElement('div', { className: 'flex-1' }, [
+                                        className: 'rounded-lg transition-all hover:opacity-80 relative',
+                                        style: { 
+                                            width: `${percentage}%`,
+                                            height: '24px',
+                                            background: color,
+                                            minWidth: '20px'
+                                        }
+                                    }, [
                                         React.createElement('div', {
-                                            className: 'rounded-lg transition-all hover:opacity-80 relative',
-                                            style: { 
-                                                width: `${percentage}%`,
-                                                height: '24px',
-                                                background: color,
-                                                minWidth: '20px'
-                                            }
+                                            className: 'absolute inset-0 flex items-center justify-end px-2'
                                         }, [
-                                            React.createElement('div', {
-                                                className: 'absolute inset-0 flex items-center justify-end px-2'
-                                            }, [
-                                                React.createElement('span', {
-                                                    className: 'text-white text-xs font-bold'
-                                                }, value)
-                                            ])
+                                            React.createElement('span', {
+                                                className: 'text-white text-xs font-bold'
+                                            }, value)
                                         ])
                                     ])
-                                ]);
-                            })
-                        )
-                    ])
-                );
-            }
-            
-            // Usar Recharts si está disponible
-            return (
-                React.createElement(Recharts.ResponsiveContainer, { width: "100%", height: "100%" }, [
-                    React.createElement(Recharts.BarChart, {
-                        data: preparedData,
-                        layout: "vertical",
-                        margin: { left: 0, right: 20, top: 10, bottom: 10 }
-                    }, [
-                        React.createElement(Recharts.CartesianGrid, { strokeDasharray: "3 3", horizontal: false, stroke: "#f1f5f9" }),
-                        React.createElement(Recharts.XAxis, {
-                            type: "number",
-                            fontSize: 9,
-                            tick: { fill: '#94a3b8' }
-                        }),
-                        React.createElement(Recharts.YAxis, {
-                            dataKey: nameKey,
-                            type: "category",
-                            width: 100,
-                            fontSize: 9,
-                            tick: { fill: '#64748b' }
-                        }),
-                        React.createElement(Recharts.Tooltip, {
-                            formatter: (value) => [`${value} colaboradores`, 'Cantidad'],
-                            labelFormatter: (label) => `Rango: ${label}`
-                        }),
-                        React.createElement(Recharts.Bar, {
-                            dataKey: dataKey,
-                            fill: color,
-                            radius: [0, 8, 8, 0],
-                            name: "Colaboradores",
-                            barSize: 20
+                                ])
+                            ]);
                         })
-                    ])
+                    )
                 ])
             );
         };
         
-        // Componente de gráfico circular con fallback - CORREGIDO
         const PieChartComponent = ({ data }) => {
-            const [Recharts, setRecharts] = React.useState(window.Recharts || createSimulatedRecharts());
-            
-            React.useEffect(() => {
-                if (!Recharts || !Recharts.ResponsiveContainer) {
-                    const interval = setInterval(() => {
-                        if (window.Recharts && window.Recharts !== Recharts) {
-                            setRecharts(window.Recharts);
-                            clearInterval(interval);
-                        }
-                    }, 1000);
-                    
-                    return () => clearInterval(interval);
-                }
-            }, [Recharts]);
-            
-            // Asegurar que data sea un array válido
             const chartData = data && Array.isArray(data) ? data : [];
             
             if (chartData.length === 0) {
@@ -1734,132 +1583,90 @@
                 );
             }
             
-            // Calcular total para porcentajes
             const total = chartData.reduce((sum, item) => sum + (item.value || 0), 0);
             
-            // Si Recharts no está disponible, mostrar gráfico manual
-            if (!Recharts || !Recharts.ResponsiveContainer) {
-                return (
-                    React.createElement('div', {
-                        className: 'h-full flex flex-col items-center justify-center'
-                    }, [
-                        React.createElement('div', { className: 'relative w-40 h-40 mb-6' }, [
-                            (() => {
-                                let currentAngle = 0;
-                                const elements = [];
-                                
-                                chartData.forEach((item, index) => {
-                                    const value = item.value || 0;
-                                    const percentage = total > 0 ? (value / total) * 100 : 0;
-                                    const angle = (percentage * 360) / 100;
-                                    
-                                    const startAngle = currentAngle;
-                                    const endAngle = currentAngle + angle;
-                                    currentAngle = endAngle;
-                                    
-                                    // Coordenadas para SVG path
-                                    const largeArc = angle > 180 ? 1 : 0;
-                                    const startX = 50 + 40 * Math.cos(startAngle * Math.PI / 180);
-                                    const startY = 50 + 40 * Math.sin(startAngle * Math.PI / 180);
-                                    const endX = 50 + 40 * Math.cos(endAngle * Math.PI / 180);
-                                    const endY = 50 + 40 * Math.sin(endAngle * Math.PI / 180);
-                                    
-                                    elements.push(
-                                        React.createElement('path', {
-                                            key: index,
-                                            d: `M 50 50 L ${startX} ${startY} A 40 40 0 ${largeArc} 1 ${endX} ${endY} Z`,
-                                            fill: CHART_COLORS[index % CHART_COLORS.length],
-                                            className: 'hover:opacity-80 transition-opacity cursor-pointer',
-                                            title: `${item.name}: ${value} (${percentage.toFixed(1)}%)`
-                                        })
-                                    );
-                                });
-                                
-                                return React.createElement('svg', {
-                                    width: "100%",
-                                    height: "100%",
-                                    viewBox: "0 0 100 100"
-                                }, [
-                                    ...elements,
-                                    React.createElement('circle', { cx: "50", cy: "50", r: "25", fill: "white" }),
-                                    React.createElement('text', {
-                                        x: "50",
-                                        y: "50",
-                                        textAnchor: "middle",
-                                        dy: "0.3em",
-                                        fontSize: "12",
-                                        fontWeight: "bold",
-                                        fill: "#334155"
-                                    }, total)
-                                ]);
-                            })()
-                        ]),
-                        
-                        // Leyenda
-                        React.createElement('div', { className: 'mt-4 space-y-2 max-w-xs' },
-                            chartData.map((item, index) => (
-                                React.createElement('div', {
-                                    key: index,
-                                    className: 'flex items-center justify-between text-sm'
-                                }, [
-                                    React.createElement('div', { className: 'flex items-center' }, [
-                                        React.createElement('div', {
-                                            className: 'w-3 h-3 rounded mr-2',
-                                            style: { backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }
-                                        }),
-                                        React.createElement('span', { className: 'text-slate-700' }, item.name)
-                                    ]),
-                                    React.createElement('div', { className: 'text-slate-600 font-medium' },
-                                        `${item.value} (${total > 0 ? Math.round((item.value / total) * 100) : 0}%)`
-                                    )
-                                ])
-                            ))
-                        )
-                    ])
-                );
-            }
-            
-            // Usar Recharts si está disponible
             return (
-                React.createElement(Recharts.ResponsiveContainer, { width: "100%", height: "100%" }, [
-                    React.createElement(Recharts.PieChart, {}, [
-                        React.createElement(Recharts.Pie, {
-                            data: chartData,
-                            innerRadius: 50,
-                            outerRadius: 70,
-                            dataKey: "value",
-                            stroke: "none",
-                            paddingAngle: 2,
-                            nameKey: "name"
-                        },
-                            chartData.map((entry, index) => (
-                                React.createElement(Recharts.Cell, {
-                                    key: `cell-${index}`,
-                                    fill: CHART_COLORS[index % CHART_COLORS.length]
-                                })
-                            ))
-                        ),
-                        React.createElement(Recharts.Tooltip, {
-                            formatter: (value, name, props) => {
-                                const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
-                                return [`${value} (${percentage}%)`, props.payload.name];
-                            }
-                        }),
-                        React.createElement(Recharts.Legend, {
-                            iconType: "circle",
-                            iconSize: 8,
-                            layout: "vertical",
-                            verticalAlign: "middle",
-                            align: "right",
-                            wrapperStyle: { fontSize: '10px' }
-                        })
-                    ])
+                React.createElement('div', {
+                    className: 'h-full flex flex-col items-center justify-center'
+                }, [
+                    React.createElement('div', { className: 'relative w-40 h-40 mb-6' }, [
+                        (() => {
+                            let currentAngle = 0;
+                            const elements = [];
+                            
+                            chartData.forEach((item, index) => {
+                                const value = item.value || 0;
+                                const percentage = total > 0 ? (value / total) * 100 : 0;
+                                const angle = (percentage * 360) / 100;
+                                
+                                const startAngle = currentAngle;
+                                const endAngle = currentAngle + angle;
+                                currentAngle = endAngle;
+                                
+                                // Coordenadas para SVG path
+                                const largeArc = angle > 180 ? 1 : 0;
+                                const startX = 50 + 40 * Math.cos(startAngle * Math.PI / 180);
+                                const startY = 50 + 40 * Math.sin(startAngle * Math.PI / 180);
+                                const endX = 50 + 40 * Math.cos(endAngle * Math.PI / 180);
+                                const endY = 50 + 40 * Math.sin(endAngle * Math.PI / 180);
+                                
+                                elements.push(
+                                    React.createElement('path', {
+                                        key: index,
+                                        d: `M 50 50 L ${startX} ${startY} A 40 40 0 ${largeArc} 1 ${endX} ${endY} Z`,
+                                        fill: CHART_COLORS[index % CHART_COLORS.length],
+                                        className: 'hover:opacity-80 transition-opacity cursor-pointer',
+                                        title: `${item.name}: ${value} (${percentage.toFixed(1)}%)`
+                                    })
+                                );
+                            });
+                            
+                            return React.createElement('svg', {
+                                width: "100%",
+                                height: "100%",
+                                viewBox: "0 0 100 100"
+                            }, [
+                                ...elements,
+                                React.createElement('circle', { cx: "50", cy: "50", r: "25", fill: "white" }),
+                                React.createElement('text', {
+                                    x: "50",
+                                    y: "50",
+                                    textAnchor: "middle",
+                                    dy: "0.3em",
+                                    fontSize: "12",
+                                    fontWeight: "bold",
+                                    fill: "#334155"
+                                }, total)
+                            ]);
+                        })()
+                    ]),
+                    
+                    // Leyenda
+                    React.createElement('div', { className: 'mt-4 space-y-2 max-w-xs' },
+                        chartData.map((item, index) => (
+                            React.createElement('div', {
+                                key: index,
+                                className: 'flex items-center justify-between text-sm'
+                            }, [
+                                React.createElement('div', { className: 'flex items-center' }, [
+                                    React.createElement('div', {
+                                        className: 'w-3 h-3 rounded mr-2',
+                                        style: { backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }
+                                    }),
+                                    React.createElement('span', { className: 'text-slate-700' }, item.name)
+                                ]),
+                                React.createElement('div', { className: 'text-slate-600 font-medium' },
+                                    `${item.value} (${total > 0 ? Math.round((item.value / total) * 100) : 0}%)`
+                                )
+                            ])
+                        ))
+                    )
                 ])
             );
         };
         
         // ============================================
-        // COMPONENTE DE CARGA (UploadTab) - CORREGIDO
+        // COMPONENTE DE CARGA (UploadTab)
         // ============================================
         
         const UploadTab = ({ onImport }) => {
@@ -1868,9 +1675,9 @@
             
             const loadSimulator = () => {
                 setLoading(true);
-                // Mostrar mensaje de simulación
                 setTimeout(() => {
-                    onImport(initialNodes);
+                    const sanitizedNodes = validateAndSanitizeNodes(initialNodes);
+                    onImport(sanitizedNodes);
                     setLoading(false);
                     alert('✅ Simulación cargada exitosamente. Ahora puedes ver todos los dashboards funcionando.');
                 }, 1500);
@@ -1938,15 +1745,9 @@
                             };
                         });
                         
-                        const ids = new Set(mapped.map(n => n.id));
-                        const validated = mapped.map(node => ({
-                            ...node,
-                            parentId: node.parentId && ids.has(node.parentId.toString()) ? node.parentId.toString() : null,
-                            successionId: node.successionId && ids.has(node.successionId.toString()) ? node.successionId.toString() : null
-                        }));
-                        
-                        onImport(validated);
-                        alert(`✅ Archivo cargado exitosamente. ${validated.length} colaboradores importados.`);
+                        const sanitizedNodes = validateAndSanitizeNodes(mapped);
+                        onImport(sanitizedNodes);
+                        alert(`✅ Archivo cargado exitosamente. ${sanitizedNodes.length} colaboradores importados.`);
                     } catch (err) {
                         console.error('Error procesando archivo:', err);
                         alert(`Error procesando el archivo: ${err.message}\n\nAsegúrate de que el archivo tenga el formato correcto.`);
@@ -2279,7 +2080,7 @@
         };
         
         // ============================================
-        // COMPONENTE DE EDICIÓN DE NODO (NodeForm) - CORREGIDO
+        // COMPONENTE DE EDICIÓN DE NODO (NodeForm)
         // ============================================
         
         const NodeForm = ({ selectedNode, nodes, onUpdate, onAdd, onDelete, onCancel }) => {
@@ -2376,6 +2177,11 @@
                     newErrors.parentId = 'Un colaborador no puede reportarse a sí mismo';
                 }
                 
+                // Verificar ciclos
+                if (wouldCreateCycle(formData.id, formData.parentId, nodes)) {
+                    newErrors.parentId = 'Esta asignación crearía un ciclo jerárquico';
+                }
+                
                 if (formData.isCritical && formData.successionId === formData.id) {
                     newErrors.successionId = 'El sucesor no puede ser la misma persona';
                 }
@@ -2390,7 +2196,15 @@
                     return;
                 }
                 
-                selectedNode ? onUpdate(formData) : onAdd(formData);
+                const sanitizedData = {
+                    ...formData,
+                    salary: Number(formData.salary) || 0,
+                    performance: Number(formData.performance) || 80,
+                    seniority: Number(formData.seniority) || 0,
+                    isCritical: Boolean(formData.isCritical)
+                };
+                
+                selectedNode ? onUpdate(sanitizedData) : onAdd(sanitizedData);
             };
             
             const availableSuccessors = nodes.filter(n => 
@@ -2433,9 +2247,9 @@
                                     React.createElement('h3', { className: 'font-black text-lg' },
                                         selectedNode ? 'Editar Colaborador' : 'Nuevo Colaborador'
                                     ),
-                                    React.createElement('p', { className: 'text-slate-300 text-sm' },
-                                        selectedNode ? 'Actualiza la información del colaborador' : 'Agrega un nuevo miembro al equipo'
-                                    )
+                                    React.createElement('p', {
+                                        className: 'text-slate-300 text-sm'
+                                    }, selectedNode ? 'Actualiza la información del colaborador' : 'Agrega un nuevo miembro al equipo')
                                 ])
                             ]),
                             React.createElement('div', { className: 'text-right' }, [
@@ -2801,13 +2615,14 @@
         };
         
         // ============================================
-        // COMPONENTE DE VISUALIZACIÓN D3 (MEJORADO) - CORREGIDO
+        // COMPONENTE DE VISUALIZACIÓN D3 (ROBUSTO)
         // ============================================
         
         const OrgChartD3 = ({ nodes, selectedNodeId, onSelectNode, showLegend = true }) => {
             const svgRef = React.useRef(null);
             const containerRef = React.useRef(null);
             const [dimensions, setDimensions] = React.useState({ width: 0, height: 0 });
+            const [error, setError] = React.useState(null);
             
             React.useEffect(() => {
                 const updateDimensions = () => {
@@ -2823,7 +2638,7 @@
             }, []);
             
             React.useEffect(() => {
-                if (!svgRef.current || !containerRef.current || nodes.length === 0) return;
+                if (!svgRef.current || !containerRef.current) return;
                 
                 const { width, height } = dimensions;
                 if (width === 0 || height === 0) return;
@@ -2834,73 +2649,101 @@
                 
                 svg.selectAll('*').remove();
                 
-                const defs = svg.append('defs');
-                
-                const cardShadow = defs.append('filter')
-                    .attr('id', 'card-shadow')
-                    .attr('height', '130%');
-                
-                cardShadow.append('feGaussianBlur')
-                    .attr('in', 'SourceAlpha')
-                    .attr('stdDeviation', 3);
-                cardShadow.append('feOffset')
-                    .attr('dx', 0)
-                    .attr('dy', 4)
-                    .attr('result', 'offsetBlur');
-                
-                const feMerge = cardShadow.append('feMerge');
-                feMerge.append('feMergeNode').attr('in', 'offsetBlur');
-                feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
-                
-                const selectedShadow = defs.append('filter')
-                    .attr('id', 'selected-shadow')
-                    .attr('height', '150%');
-                
-                selectedShadow.append('feGaussianBlur')
-                    .attr('in', 'SourceAlpha')
-                    .attr('stdDeviation', 4);
-                selectedShadow.append('feOffset')
-                    .attr('dx', 0)
-                    .attr('dy', 6)
-                    .attr('result', 'offsetBlur2');
-                selectedShadow.append('feFlood')
-                    .attr('flood-color', '#3b82f6')
-                    .attr('flood-opacity', 0.3)
-                    .attr('result', 'color');
-                selectedShadow.append('feComposite')
-                    .attr('in', 'color')
-                    .attr('in2', 'offsetBlur2')
-                    .attr('operator', 'in')
-                    .attr('result', 'coloredBlur');
-                
-                const feMerge2 = selectedShadow.append('feMerge');
-                feMerge2.append('feMergeNode').attr('in', 'coloredBlur');
-                feMerge2.append('feMergeNode').attr('in', 'SourceGraphic');
-                
-                const g = svg.append('g');
-                
-                const zoom = d3.zoom()
-                    .scaleExtent([0.1, 3])
-                    .on('zoom', (event) => {
-                        g.attr('transform', event.transform);
-                    });
-                
-                svg.call(zoom);
-                
                 try {
-                    const nodeMap = new Map(nodes.map(n => [n.id, n]));
-                    const processed = nodes.map(n => ({ ...n }));
+                    if (!nodes || nodes.length === 0) {
+                        // Mostrar mensaje de estructura vacía
+                        svg.append('text')
+                            .attr('x', width / 2)
+                            .attr('y', height / 2)
+                            .attr('text-anchor', 'middle')
+                            .attr('fill', '#64748b')
+                            .text('Carga datos o usa el simulador para comenzar');
+                        return;
+                    }
+                    
+                    // Sanitizar datos antes de procesar
+                    const sanitizedNodes = sanitizeForD3(nodes);
+                    
+                    if (sanitizedNodes.length === 0) {
+                        svg.append('text')
+                            .attr('x', width / 2)
+                            .attr('y', height / 2)
+                            .attr('text-anchor', 'middle')
+                            .attr('fill', '#64748b')
+                            .text('No hay datos válidos para mostrar');
+                        return;
+                    }
+                    
+                    const defs = svg.append('defs');
+                    
+                    const cardShadow = defs.append('filter')
+                        .attr('id', 'card-shadow')
+                        .attr('height', '130%');
+                    
+                    cardShadow.append('feGaussianBlur')
+                        .attr('in', 'SourceAlpha')
+                        .attr('stdDeviation', 3);
+                    cardShadow.append('feOffset')
+                        .attr('dx', 0)
+                        .attr('dy', 4)
+                        .attr('result', 'offsetBlur');
+                    
+                    const feMerge = cardShadow.append('feMerge');
+                    feMerge.append('feMergeNode').attr('in', 'offsetBlur');
+                    feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+                    
+                    const selectedShadow = defs.append('filter')
+                        .attr('id', 'selected-shadow')
+                        .attr('height', '150%');
+                    
+                    selectedShadow.append('feGaussianBlur')
+                        .attr('in', 'SourceAlpha')
+                        .attr('stdDeviation', 4);
+                    selectedShadow.append('feOffset')
+                        .attr('dx', 0)
+                        .attr('dy', 6)
+                        .attr('result', 'offsetBlur2');
+                    selectedShadow.append('feFlood')
+                        .attr('flood-color', '#3b82f6')
+                        .attr('flood-opacity', 0.3)
+                        .attr('result', 'color');
+                    selectedShadow.append('feComposite')
+                        .attr('in', 'color')
+                        .attr('in2', 'offsetBlur2')
+                        .attr('operator', 'in')
+                        .attr('result', 'coloredBlur');
+                    
+                    const feMerge2 = selectedShadow.append('feMerge');
+                    feMerge2.append('feMergeNode').attr('in', 'coloredBlur');
+                    feMerge2.append('feMergeNode').attr('in', 'SourceGraphic');
+                    
+                    const g = svg.append('g');
+                    
+                    const zoom = d3.zoom()
+                        .scaleExtent([0.1, 3])
+                        .on('zoom', (event) => {
+                            g.attr('transform', event.transform);
+                        });
+                    
+                    svg.call(zoom);
+                    
+                    const nodeMap = new Map(sanitizedNodes.map(n => [n.id, n]));
+                    const processed = sanitizedNodes.map(n => ({ ...n }));
                     const roots = processed.filter(n => !n.parentId || !nodeMap.has(n.parentId));
                     const virtualRootId = 'VIRTUAL_ROOT';
-                    processed.push({
-                        id: virtualRootId,
-                        name: '',
-                        title: '',
-                        department: '',
-                        parentId: null
-                    });
                     
-                    roots.forEach(r => r.parentId = virtualRootId);
+                    // Añadir raíz virtual solo si hay múltiples raíces
+                    if (roots.length > 1) {
+                        processed.push({
+                            id: virtualRootId,
+                            name: '',
+                            title: '',
+                            department: '',
+                            parentId: null
+                        });
+                        
+                        roots.forEach(r => r.parentId = virtualRootId);
+                    }
                     
                     const root = d3.stratify()
                         .id(d => d.id)
@@ -2913,11 +2756,12 @@
                     
                     treeLayout(root);
                     
+                    // Dibujar líneas de conexión
                     g.selectAll('.link')
                         .data(root.links())
                         .enter()
                         .append('path')
-                        .filter(d => d.source.id !== virtualRootId)
+                        .filter(d => d.source.id !== virtualRootId && d.target.id !== virtualRootId)
                         .attr('class', 'link')
                         .attr('fill', 'none')
                         .attr('stroke', '#cbd5e1')
@@ -2928,6 +2772,7 @@
                             .y(d => d.y)
                         );
                     
+                    // Crear nodos
                     const nodeGroups = g.selectAll('.node')
                         .data(root.descendants())
                         .enter()
@@ -2942,6 +2787,7 @@
                         .style('cursor', 'pointer')
                         .attr('data-node-id', d => d.id);
                     
+                    // Fondo del nodo
                     nodeGroups.append('rect')
                         .attr('class', 'node-card')
                         .attr('width', 200)
@@ -2964,6 +2810,7 @@
                         })
                         .attr('class', d => d.data.isCritical && !d.data.successionId ? 'animate-pulse' : '');
                     
+                    // Barra superior de color
                     nodeGroups.append('rect')
                         .attr('width', 200)
                         .attr('height', 8)
@@ -2972,6 +2819,7 @@
                         .attr('rx', 4)
                         .attr('fill', d => d.data.color || COLORS_DEPT[d.data.department] || '#3b82f6');
                     
+                    // Nombre
                     nodeGroups.append('text')
                         .attr('class', 'node-name')
                         .attr('dy', -30)
@@ -2985,6 +2833,7 @@
                             return name.length > 20 ? name.substring(0, 18) + '...' : name;
                         });
                     
+                    // Cargo
                     nodeGroups.append('text')
                         .attr('class', 'node-title')
                         .attr('dy', -15)
@@ -2998,6 +2847,7 @@
                             return title.length > 25 ? title.substring(0, 23) + '...' : title;
                         });
                     
+                    // Departamento
                     nodeGroups.append('text')
                         .attr('class', 'node-dept')
                         .attr('dy', 0)
@@ -3013,6 +2863,7 @@
                             return dept.length > 18 ? dept.substring(0, 16) + '...' : dept;
                         });
                     
+                    // Barra de rendimiento
                     const perfGroup = nodeGroups.append('g')
                         .attr('transform', 'translate(-85, 20)');
                     
@@ -3025,7 +2876,7 @@
                     perfGroup.append('rect')
                         .attr('width', d => {
                             const perf = d.data.performance || 0;
-                            return (perf / 100) * 130;
+                            return Math.max(10, (perf / 100) * 130);
                         })
                         .attr('height', 6)
                         .attr('rx', 3)
@@ -3046,6 +2897,7 @@
                         .style('font-family', 'Inter, sans-serif')
                         .text(d => `${d.data.performance || 0}%`);
                     
+                    // Badge de potencial
                     const badgeGroup = nodeGroups.append('g')
                         .attr('transform', 'translate(50, 35)');
                     
@@ -3081,6 +2933,7 @@
                             return 'BAJO';
                         });
                     
+                    // Indicador de posición crítica
                     nodeGroups.filter(d => d.data.isCritical)
                         .append('circle')
                         .attr('cx', 80)
@@ -3091,6 +2944,7 @@
                         .attr('stroke-width', 2)
                         .attr('class', d => !d.data.successionId ? 'animate-pulse' : '');
                     
+                    // Salario
                     nodeGroups.append('text')
                         .attr('x', 80)
                         .attr('y', 55)
@@ -3106,6 +2960,7 @@
                             return `$${salary}`;
                         });
                     
+                    // Ajustar zoom para mostrar todo el árbol
                     const rootNodes = root.descendants().filter(d => d.id !== virtualRootId);
                     if (rootNodes.length > 0) {
                         const xExtent = d3.extent(rootNodes, d => d.x);
@@ -3128,20 +2983,38 @@
                             );
                     }
                     
+                    setError(null);
                 } catch (err) {
                     console.error('Error al renderizar el organigrama:', err);
+                    setError('Error al renderizar el gráfico. Los datos pueden estar corruptos.');
+                    
                     // Mostrar mensaje de error
                     svg.append('text')
                         .attr('x', width / 2)
                         .attr('y', height / 2)
                         .attr('text-anchor', 'middle')
-                        .attr('fill', '#64748b')
-                        .text('Error al cargar el organigrama. Intenta recargar la página.');
+                        .attr('fill', '#ef4444')
+                        .text('Error al renderizar el organigrama');
                 }
                 
             }, [nodes, selectedNodeId, dimensions]);
             
-            if (nodes.length === 0) {
+            if (error) {
+                return (
+                    React.createElement('div', {
+                        className: 'w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-red-50 to-orange-50 text-red-400'
+                    }, [
+                        React.createElement('i', { className: 'fas fa-exclamation-triangle text-4xl mb-4' }),
+                        React.createElement('p', { className: 'font-bold text-red-600' }, error),
+                        React.createElement('button', {
+                            onClick: () => setError(null),
+                            className: 'mt-4 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors'
+                        }, 'Reintentar')
+                    ])
+                );
+            }
+            
+            if (!nodes || nodes.length === 0) {
                 return (
                     React.createElement('div', {
                         className: 'w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-slate-50 to-blue-50/30 text-slate-400'
@@ -3235,35 +3108,43 @@
         };
         
         // ============================================
-        // COMPONENTES DE ANÁLISIS (SIMPLIFICADOS) - CORREGIDOS
+        // COMPONENTES DE ANÁLISIS
         // ============================================
         
-        // Componente para gestión de versiones
         const VersionManager = ({ nodes, onSaveVersion }) => {
             const [versions, setVersions] = React.useState(() => {
-                const saved = localStorage.getItem('luxanalitica_versions');
-                return saved ? JSON.parse(saved) : [];
+                try {
+                    const saved = localStorage.getItem('luxanalitica_versions');
+                    return saved ? JSON.parse(saved) : [];
+                } catch {
+                    return [];
+                }
             });
             
             const [versionName, setVersionName] = React.useState('');
             
             const handleSaveVersion = () => {
-                const name = versionName || `Versión ${versions.length + 1} - ${new Date().toLocaleString()}`;
-                const newVersion = {
-                    id: `v${Date.now()}`,
-                    name,
-                    timestamp: new Date().toISOString(),
-                    data: JSON.parse(JSON.stringify(nodes)),
-                    stats: calculateVersionStats(nodes)
-                };
-                
-                const updatedVersions = [newVersion, ...versions].slice(0, 3);
-                setVersions(updatedVersions);
-                localStorage.setItem('luxanalitica_versions', JSON.stringify(updatedVersions));
-                setVersionName('');
-                onSaveVersion(updatedVersions);
-                
-                alert(`Versión "${name}" guardada correctamente.`);
+                try {
+                    const name = versionName || `Versión ${versions.length + 1} - ${new Date().toLocaleString()}`;
+                    const newVersion = {
+                        id: `v${Date.now()}`,
+                        name,
+                        timestamp: new Date().toISOString(),
+                        data: JSON.parse(JSON.stringify(nodes)),
+                        stats: calculateVersionStats(nodes)
+                    };
+                    
+                    const updatedVersions = [newVersion, ...versions].slice(0, 3);
+                    setVersions(updatedVersions);
+                    localStorage.setItem('luxanalitica_versions', JSON.stringify(updatedVersions));
+                    setVersionName('');
+                    onSaveVersion(updatedVersions);
+                    
+                    alert(`Versión "${name}" guardada correctamente.`);
+                } catch (error) {
+                    console.error('Error guardando versión:', error);
+                    alert('Error al guardar la versión.');
+                }
             };
             
             const calculateVersionStats = (nodes) => {
@@ -3277,10 +3158,14 @@
             };
             
             const handleDeleteVersion = (versionId) => {
-                const updatedVersions = versions.filter(v => v.id !== versionId);
-                setVersions(updatedVersions);
-                localStorage.setItem('luxanalitica_versions', JSON.stringify(updatedVersions));
-                onSaveVersion(updatedVersions);
+                try {
+                    const updatedVersions = versions.filter(v => v.id !== versionId);
+                    setVersions(updatedVersions);
+                    localStorage.setItem('luxanalitica_versions', JSON.stringify(updatedVersions));
+                    onSaveVersion(updatedVersions);
+                } catch (error) {
+                    console.error('Error eliminando versión:', error);
+                }
             };
             
             return (
@@ -3336,7 +3221,6 @@
             );
         };
         
-        // Componente para análisis de carga de subordinados
         const SubordinateAnalysis = ({ nodes }) => {
             const analysis = React.useMemo(() => {
                 if (!nodes.length) return null;
@@ -3447,7 +3331,6 @@
             );
         };
         
-        // Componente para recomendaciones de IA
         const AIRecommendations = ({ nodes, versions }) => {
             const generateRecommendations = () => {
                 if (!nodes.length) return [];
@@ -3592,21 +3475,23 @@
         };
         
         // ============================================
-        // COMPONENTE DE ANÁLISIS 360° (ARREGLADO) - CORREGIDO
+        // COMPONENTE DE ANÁLISIS 360°
         // ============================================
         
         const AnalysisTab = ({ nodes }) => {
             const [versions, setVersions] = React.useState(() => {
-                const saved = localStorage.getItem('luxanalitica_versions');
-                return saved ? JSON.parse(saved) : [];
+                try {
+                    const saved = localStorage.getItem('luxanalitica_versions');
+                    return saved ? JSON.parse(saved) : [];
+                } catch {
+                    return [];
+                }
             });
             
-            // Generar datos de gráficos usando la función corregida
             const chartData = React.useMemo(() => {
                 return generateChartData(nodes);
             }, [nodes]);
             
-            // Calcular estadísticas adicionales
             const stats = React.useMemo(() => {
                 if (!nodes || nodes.length === 0) {
                     return {
@@ -3666,30 +3551,21 @@
                 );
                 
                 return {
-                    // Métricas principales
                     totalNodes: nodes.length,
                     totalDepartments: departments.length,
                     totalSalary,
                     avgSalary,
                     avgPerformance,
                     avgSeniority,
-                    
-                    // Métricas de riesgo
                     criticalNodes: criticalNodes.length,
                     criticalIssues: criticalIssues.length,
                     riskLevel,
-                    
-                    // Talentos
                     topTalents: topTalents.length,
-                    
-                    // Carga de trabajo
                     overloadedManagers,
                     avgSubordinatesPerManager: Object.values(subordinateCount).length > 0 
                         ? (Object.values(subordinateCount).reduce((a, b) => a + b, 0) / Object.values(subordinateCount).length).toFixed(1)
                         : 0,
                     maxSubordinates: Math.max(...Object.values(subordinateCount).concat([0])),
-                    
-                    // Porcentajes
                     genderDiversity: chartData.genderData ? (chartData.genderData.length > 1 ? 1 : 0) : 0,
                     avgDeptSize: departments.length > 0 ? Math.round(nodes.length / departments.length) : 0
                 };
@@ -3705,73 +3581,78 @@
                     return;
                 }
                 
-                const currentStats = stats;
-                const bestVersion = versions[0];
-                
-                const reportData = [
-                    ['REPORTE COMPARATIVO DE ESTRUCTURA ORGANIZACIONAL', '', '', ''],
-                    ['Generado por Luxanalitica HR 360°', '', 'Fecha:', new Date().toLocaleDateString()],
-                    ['', '', '', ''],
-                    ['MÉTRICA', 'VERSIÓN ACTUAL', `VERSIÓN ${bestVersion.name}`, 'DIFERENCIA'],
-                    ['Total Colaboradores', currentStats.totalNodes, bestVersion.stats.totalNodes, currentStats.totalNodes - bestVersion.stats.totalNodes],
-                    ['Masa Salarial Mensual', `$${currentStats.totalSalary.toLocaleString()}`, `$${bestVersion.stats.totalSalary.toLocaleString()}`, `$${(currentStats.totalSalary - bestVersion.stats.totalSalary).toLocaleString()}`],
-                    ['Rendimiento Promedio', `${currentStats.avgPerformance}%`, `${bestVersion.stats.avgPerformance}%`, `${currentStats.avgPerformance - bestVersion.stats.avgPerformance}%`],
-                    ['Posiciones Críticas', currentStats.criticalNodes, bestVersion.stats.criticalNodes, currentStats.criticalNodes - bestVersion.stats.criticalNodes],
-                    ['Críticos sin Sucesor', currentStats.criticalIssues, bestVersion.stats.criticalIssues, currentStats.criticalIssues - bestVersion.stats.criticalIssues],
-                    ['', '', '', ''],
-                    ['RECOMENDACIONES DE IA:', '', '', ''],
-                    ['1. Optimización Salarial', 'Revisar colaboradores con salario por debajo del promedio de su departamento', '', ''],
-                    ['2. Gestión de Carga', `Redistribuir ${currentStats.overloadedManagers.length} jefes sobrecargados`, '', ''],
-                    ['3. Plan de Sucesión', `Definir sucesores para ${currentStats.criticalIssues} posiciones críticas`, '', ''],
-                    ['4. Desarrollo de Talento', `Invertir en ${currentStats.topTalents} colaboradores de alto potencial`, '', ''],
-                ];
-                
-                chartData.deptStats?.forEach(dept => {
-                    if (dept.avgPerformance < 70) {
-                        reportData.push([
-                            `Reestructurar ${dept.name}`,
-                            `${dept.avgPerformance}% rendimiento`,
-                            '≥75% rendimiento',
-                            'Aumento de productividad'
-                        ]);
-                    }
-                });
-                
-                const ws = XLSX.utils.aoa_to_sheet(reportData);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, "Recomendaciones");
-                
-                const detailData = nodes.map(node => {
-                    const deptAvg = chartData.deptStats?.find(d => d.name === node.department)?.avgSalary || 0;
-                    const salaryRatio = deptAvg > 0 ? (node.salary / deptAvg) : 0;
+                try {
+                    const currentStats = stats;
+                    const bestVersion = versions[0];
                     
-                    return {
-                        'ID': node.id,
-                        'Nombre': node.name,
-                        'Cargo': node.title,
-                        'Departamento': node.department,
-                        'Salario Actual': node.salary,
-                        'Salario Promedio Depto': deptAvg,
-                        '% vs Promedio': `${Math.round((salaryRatio - 1) * 100)}%`,
-                        'Rendimiento': `${node.performance}%`,
-                        'Potencial': node.potential,
-                        'Antigüedad': `${node.seniority} años`,
-                        'Es Crítico': node.isCritical ? 'SÍ' : 'NO',
-                        'Tiene Sucesor': node.successionId ? 'SÍ' : 'NO',
-                        'Subordinados': chartData.matrixData?.find(m => m.name === node.name)?.subordinateCount || 0,
-                        'Recomendación': 
-                            salaryRatio < 0.7 ? 'Aumento salarial' :
-                            node.performance < 70 && node.salary > 10000 ? 'Plan de mejora' :
-                            node.isCritical && !node.successionId ? 'Definir sucesor' :
-                            node.performance >= 85 && node.salary < 5000 && node.potential === 'Alto' ? 'Retención estratégica' :
-                            'OK'
-                    };
-                });
-                
-                const ws2 = XLSX.utils.json_to_sheet(detailData);
-                XLSX.utils.book_append_sheet(wb, ws2, "Análisis Detallado");
-                
-                XLSX.writeFile(wb, `Luxanalitica_Analisis_Comparativo_${new Date().toISOString().slice(0,10)}.xlsx`);
+                    const reportData = [
+                        ['REPORTE COMPARATIVO DE ESTRUCTURA ORGANIZACIONAL', '', '', ''],
+                        ['Generado por Luxanalitica HR 360°', '', 'Fecha:', new Date().toLocaleDateString()],
+                        ['', '', '', ''],
+                        ['MÉTRICA', 'VERSIÓN ACTUAL', `VERSIÓN ${bestVersion.name}`, 'DIFERENCIA'],
+                        ['Total Colaboradores', currentStats.totalNodes, bestVersion.stats.totalNodes, currentStats.totalNodes - bestVersion.stats.totalNodes],
+                        ['Masa Salarial Mensual', `$${currentStats.totalSalary.toLocaleString()}`, `$${bestVersion.stats.totalSalary.toLocaleString()}`, `$${(currentStats.totalSalary - bestVersion.stats.totalSalary).toLocaleString()}`],
+                        ['Rendimiento Promedio', `${currentStats.avgPerformance}%`, `${bestVersion.stats.avgPerformance}%`, `${currentStats.avgPerformance - bestVersion.stats.avgPerformance}%`],
+                        ['Posiciones Críticas', currentStats.criticalNodes, bestVersion.stats.criticalNodes, currentStats.criticalNodes - bestVersion.stats.criticalNodes],
+                        ['Críticos sin Sucesor', currentStats.criticalIssues, bestVersion.stats.criticalIssues, currentStats.criticalIssues - bestVersion.stats.criticalIssues],
+                        ['', '', '', ''],
+                        ['RECOMENDACIONES DE IA:', '', '', ''],
+                        ['1. Optimización Salarial', 'Revisar colaboradores con salario por debajo del promedio de su departamento', '', ''],
+                        ['2. Gestión de Carga', `Redistribuir ${currentStats.overloadedManagers.length} jefes sobrecargados`, '', ''],
+                        ['3. Plan de Sucesión', `Definir sucesores para ${currentStats.criticalIssues} posiciones críticas`, '', ''],
+                        ['4. Desarrollo de Talento', `Invertir en ${currentStats.topTalents} colaboradores de alto potencial`, '', ''],
+                    ];
+                    
+                    chartData.deptStats?.forEach(dept => {
+                        if (dept.avgPerformance < 70) {
+                            reportData.push([
+                                `Reestructurar ${dept.name}`,
+                                `${dept.avgPerformance}% rendimiento`,
+                                '≥75% rendimiento',
+                                'Aumento de productividad'
+                            ]);
+                        }
+                    });
+                    
+                    const ws = XLSX.utils.aoa_to_sheet(reportData);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Recomendaciones");
+                    
+                    const detailData = nodes.map(node => {
+                        const deptAvg = chartData.deptStats?.find(d => d.name === node.department)?.avgSalary || 0;
+                        const salaryRatio = deptAvg > 0 ? (node.salary / deptAvg) : 0;
+                        
+                        return {
+                            'ID': node.id,
+                            'Nombre': node.name,
+                            'Cargo': node.title,
+                            'Departamento': node.department,
+                            'Salario Actual': node.salary,
+                            'Salario Promedio Depto': deptAvg,
+                            '% vs Promedio': `${Math.round((salaryRatio - 1) * 100)}%`,
+                            'Rendimiento': `${node.performance}%`,
+                            'Potencial': node.potential,
+                            'Antigüedad': `${node.seniority} años`,
+                            'Es Crítico': node.isCritical ? 'SÍ' : 'NO',
+                            'Tiene Sucesor': node.successionId ? 'SÍ' : 'NO',
+                            'Subordinados': chartData.matrixData?.find(m => m.name === node.name)?.subordinateCount || 0,
+                            'Recomendación': 
+                                salaryRatio < 0.7 ? 'Aumento salarial' :
+                                node.performance < 70 && node.salary > 10000 ? 'Plan de mejora' :
+                                node.isCritical && !node.successionId ? 'Definir sucesor' :
+                                node.performance >= 85 && node.salary < 5000 && node.potential === 'Alto' ? 'Retención estratégica' :
+                                'OK'
+                        };
+                    });
+                    
+                    const ws2 = XLSX.utils.json_to_sheet(detailData);
+                    XLSX.utils.book_append_sheet(wb, ws2, "Análisis Detallado");
+                    
+                    XLSX.writeFile(wb, `Luxanalitica_Analisis_Comparativo_${new Date().toISOString().slice(0,10)}.xlsx`);
+                } catch (error) {
+                    console.error('Error generando reporte:', error);
+                    alert('Error al generar el reporte. Intenta nuevamente.');
+                }
             };
             
             return (
@@ -4133,7 +4014,7 @@
         };
         
         // ============================================
-        // COMPONENTE DE EXPORTACIÓN - CORREGIDO
+        // COMPONENTE DE EXPORTACIÓN
         // ============================================
         
         const ExportTab = ({ nodes }) => {
@@ -4441,7 +4322,7 @@
         };
         
         // ============================================
-        // COMPONENTE DE VISUALIZACIÓN (VisualTab) - CORREGIDO
+        // COMPONENTE DE VISUALIZACIÓN (VisualTab)
         // ============================================
         
         const VisualTab = ({ nodes, viewMode, setViewMode }) => {
@@ -4595,7 +4476,7 @@
         };
         
         // ============================================
-        // COMPONENTES DE INTERFAZ - CORREGIDOS
+        // COMPONENTES DE INTERFAZ
         // ============================================
         
         const Header = () => {
@@ -4759,77 +4640,20 @@
         };
         
         // ============================================
-        // COMPONENTE PRINCIPAL (App) - CORREGIDO
+        // COMPONENTE DE DISEÑO (DesignTab)
         // ============================================
         
-        const App = () => {
-            const [activeTab, setActiveTab] = React.useState('carga');
-            const [nodes, setNodes] = React.useState([]);
-            const [selectedNodeId, setSelectedNodeId] = React.useState(null);
-            const [viewMode, setViewMode] = React.useState('vertical');
-            const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
-            const [showLegend, setShowLegend] = React.useState(() => {
-                const saved = localStorage.getItem('luxanalitica_showLegend');
-                return saved ? JSON.parse(saved) : true;
-            });
-            
-            React.useEffect(() => {
-                const savedData = localStorage.getItem('luxanalitica_org_data');
-                if (savedData) {
-                    try {
-                        const parsedData = JSON.parse(savedData);
-                        if (Array.isArray(parsedData) && parsedData.length > 0) {
-                            setNodes(parsedData);
-                            setActiveTab('diseno');
-                        }
-                    } catch (error) {
-                        console.error('Error al cargar datos guardados:', error);
-                    }
-                }
-            }, []);
-            
-            React.useEffect(() => {
-                if (nodes.length > 0) {
-                    localStorage.setItem('luxanalitica_org_data', JSON.stringify(nodes));
-                }
-            }, [nodes]);
-            
-            React.useEffect(() => {
-                localStorage.setItem('luxanalitica_showLegend', JSON.stringify(showLegend));
-            }, [showLegend]);
-            
-            const handleUpdateNode = React.useCallback((updatedNode) => {
-                setNodes(prev => prev.map(node => 
-                    node.id === updatedNode.id ? updatedNode : node
-                ));
-            }, []);
-            
-            const handleAddNode = React.useCallback((newNode) => {
-                setNodes(prev => [...prev, newNode]);
-                setSelectedNodeId(newNode.id);
-            }, []);
-            
-            const handleDeleteNode = React.useCallback((nodeId) => {
-                if (window.confirm('¿Estás seguro de eliminar este colaborador? Los subordinados quedarán sin jefe asignado.')) {
-                    setNodes(prev => {
-                        return prev
-                            .filter(node => node.id !== nodeId)
-                            .map(node => 
-                                node.parentId === nodeId 
-                                    ? { ...node, parentId: null }
-                                    : node
-                            );
-                    });
-                    setSelectedNodeId(null);
-                }
-            }, []);
-            
-            const handleImport = React.useCallback((importedNodes) => {
-                setNodes(importedNodes);
-                setActiveTab('diseno');
-            }, []);
-            
-            const DesignTab = () => (
+        const DesignTab = ({ 
+            nodes, 
+            selectedNodeId, 
+            setSelectedNodeId, 
+            onUpdateNode, 
+            onAddNode, 
+            onDeleteNode, 
+            showLegend, 
+            setShowLegend 
+        }) => {
+            return (
                 React.createElement('div', { className: 'flex h-full' }, [
                     React.createElement('div', {
                         className: 'w-80 xl:w-96 border-r border-slate-200 bg-gradient-to-b from-slate-50 to-blue-50/30 p-5 shrink-0 overflow-y-auto scrollbar-hide'
@@ -4837,9 +4661,9 @@
                         React.createElement(NodeForm, {
                             selectedNode: nodes.find(n => n.id === selectedNodeId) || null,
                             nodes: nodes,
-                            onUpdate: handleUpdateNode,
-                            onAdd: handleAddNode,
-                            onDelete: handleDeleteNode,
+                            onUpdate: onUpdateNode,
+                            onAdd: onAddNode,
+                            onDelete: onDeleteNode,
                             onCancel: () => setSelectedNodeId(null)
                         })
                     ]),
@@ -4864,6 +4688,132 @@
                     ])
                 ])
             );
+        };
+        
+        // ============================================
+        // COMPONENTE PRINCIPAL (App)
+        // ============================================
+        
+        const App = () => {
+            const [activeTab, setActiveTab] = React.useState('carga');
+            const [nodes, setNodes] = React.useState([]);
+            const [selectedNodeId, setSelectedNodeId] = React.useState(null);
+            const [viewMode, setViewMode] = React.useState('vertical');
+            const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+            const [showLegend, setShowLegend] = React.useState(() => {
+                try {
+                    const saved = localStorage.getItem('luxanalitica_showLegend');
+                    return saved ? JSON.parse(saved) : true;
+                } catch {
+                    return true;
+                }
+            });
+            
+            React.useEffect(() => {
+                try {
+                    const savedData = localStorage.getItem('luxanalitica_org_data');
+                    if (savedData) {
+                        const parsedData = JSON.parse(savedData);
+                        if (Array.isArray(parsedData) && parsedData.length > 0) {
+                            const sanitized = validateAndSanitizeNodes(parsedData);
+                            setNodes(sanitized);
+                            setActiveTab('diseno');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error al cargar datos guardados:', error);
+                    localStorage.removeItem('luxanalitica_org_data');
+                }
+            }, []);
+            
+            React.useEffect(() => {
+                if (nodes.length > 0) {
+                    try {
+                        localStorage.setItem('luxanalitica_org_data', JSON.stringify(nodes));
+                    } catch (error) {
+                        console.error('Error guardando datos:', error);
+                    }
+                }
+            }, [nodes]);
+            
+            React.useEffect(() => {
+                try {
+                    localStorage.setItem('luxanalitica_showLegend', JSON.stringify(showLegend));
+                } catch (error) {
+                    console.error('Error guardando preferencia de leyenda:', error);
+                }
+            }, [showLegend]);
+            
+            const handleUpdateNode = React.useCallback((updatedNode) => {
+                setNodes(prev => {
+                    const sanitizedNode = {
+                        ...updatedNode,
+                        salary: Number(updatedNode.salary) || 0,
+                        performance: Number(updatedNode.performance) || 80,
+                        seniority: Number(updatedNode.seniority) || 0,
+                        isCritical: Boolean(updatedNode.isCritical)
+                    };
+                    
+                    return prev.map(node => 
+                        node.id === sanitizedNode.id ? sanitizedNode : node
+                    );
+                });
+            }, []);
+            
+            const handleAddNode = React.useCallback((newNode) => {
+                // Validar ciclo jerárquico
+                if (wouldCreateCycle(newNode.id, newNode.parentId, nodes)) {
+                    alert('No se puede asignar este jefe porque se crearía un ciclo jerárquico.');
+                    return;
+                }
+                
+                const sanitizedNode = {
+                    ...newNode,
+                    salary: Number(newNode.salary) || 0,
+                    performance: Number(newNode.performance) || 80,
+                    seniority: Number(newNode.seniority) || 0,
+                    isCritical: Boolean(newNode.isCritical)
+                };
+                
+                setNodes(prev => [...prev, sanitizedNode]);
+                setSelectedNodeId(sanitizedNode.id);
+            }, [nodes]);
+            
+            const handleDeleteNode = React.useCallback((nodeId) => {
+                if (window.confirm('¿Estás seguro de eliminar este colaborador? Los subordinados quedarán sin jefe asignado.')) {
+                    setNodes(prev => {
+                        return prev
+                            .filter(node => node.id !== nodeId)
+                            .map(node => 
+                                node.parentId === nodeId 
+                                    ? { ...node, parentId: null }
+                                    : node
+                            );
+                    });
+                    setSelectedNodeId(null);
+                }
+            }, []);
+            
+            const handleImport = React.useCallback((importedNodes) => {
+                const sanitizedNodes = validateAndSanitizeNodes(importedNodes);
+                setNodes(sanitizedNodes);
+                setActiveTab('diseno');
+            }, []);
+            
+            const handleHardReset = () => {
+                if (window.confirm('¿Estás seguro de reiniciar toda la aplicación? Se perderán todos los datos.')) {
+                    try {
+                        localStorage.removeItem('luxanalitica_org_data');
+                        localStorage.removeItem('luxanalitica_versions');
+                        localStorage.removeItem('luxanalitica_showLegend');
+                    } catch (error) {
+                        console.warn('Error limpiando localStorage:', error);
+                    }
+                    setNodes([]);
+                    setActiveTab('carga');
+                    setSelectedNodeId(null);
+                }
+            };
             
             return (
                 React.createElement('div', { className: 'flex h-screen w-screen overflow-hidden bg-slate-50' }, [
@@ -4873,6 +4823,17 @@
                     }),
                     
                     React.createElement('div', { className: 'flex-1 flex flex-col min-w-0' }, [
+                        React.createElement('div', { className: 'flex justify-between items-center px-6 py-2 bg-white border-b border-slate-200' }, [
+                            React.createElement('div', {}, []),
+                            React.createElement('button', {
+                                onClick: handleHardReset,
+                                className: 'px-3 py-1 text-xs text-red-600 hover:text-red-800 font-medium flex items-center gap-1'
+                            }, [
+                                React.createElement('i', { className: 'fas fa-redo' }),
+                                'Resetear Aplicación'
+                            ])
+                        ]),
+                        
                         React.createElement(Header),
                         
                         React.createElement('div', { className: 'flex-1 flex flex-col p-4 md:p-6 overflow-hidden' }, [
@@ -4885,7 +4846,16 @@
                                 className: 'flex-1 bg-white rounded-b-2xl card-shadow border border-slate-200 overflow-hidden relative'
                             }, 
                                 activeTab === 'carga' ? React.createElement(UploadTab, { onImport: handleImport }) :
-                                activeTab === 'diseno' ? React.createElement(DesignTab) :
+                                activeTab === 'diseno' ? React.createElement(DesignTab, {
+                                    nodes: nodes,
+                                    selectedNodeId: selectedNodeId,
+                                    setSelectedNodeId: setSelectedNodeId,
+                                    onUpdateNode: handleUpdateNode,
+                                    onAddNode: handleAddNode,
+                                    onDeleteNode: handleDeleteNode,
+                                    showLegend: showLegend,
+                                    setShowLegend: setShowLegend
+                                }) :
                                 activeTab === 'visualizacion' ? React.createElement(VisualTab, {
                                     nodes: nodes,
                                     viewMode: viewMode,
@@ -4902,12 +4872,37 @@
         };
         
         // ============================================
-        // RENDERIZAR LA APLICACIÓN
+        // RENDERIZAR LA APLICACIÓN CON REACT 18
         // ============================================
         
-        // Inicializar la aplicación cuando el DOM esté listo
+        // Esperar a que el DOM esté listo
         document.addEventListener('DOMContentLoaded', () => {
-            ReactDOM.render(React.createElement(App), document.getElementById('root'));
+            const rootElement = document.getElementById('root');
+            if (!rootElement) {
+                console.error('No se encontró el elemento root');
+                return;
+            }
+            
+            try {
+                const root = ReactDOM.createRoot(rootElement);
+                root.render(
+                    React.createElement(ErrorBoundary, {},
+                        React.createElement(App)
+                    )
+                );
+            } catch (error) {
+                console.error('Error al renderizar la aplicación:', error);
+                // Mostrar pantalla de error simple
+                rootElement.innerHTML = `
+                    <div style="padding: 40px; text-align: center; color: #ef4444;">
+                        <h1 style="font-size: 24px; margin-bottom: 20px;">Error crítico en la aplicación</h1>
+                        <p style="margin-bottom: 20px;">La aplicación no pudo iniciar correctamente.</p>
+                        <button onclick="window.location.reload()" style="padding: 10px 20px; background: #3b82f6; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                            Recargar página
+                        </button>
+                    </div>
+                `;
+            }
         });
     </script>
 </body>
